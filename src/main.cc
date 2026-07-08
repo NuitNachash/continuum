@@ -68,15 +68,15 @@ void printUsage() {
 
 int main(int argc, char** argv) {
     av_log_set_level(AV_LOG_ERROR);
-    logFile.open("continuum.log", std::ios::app);
+    logFile.open(getDefaultConfigDir() + "continuum.log", std::ios::app);
 
-    std::string configPath = "config.ini";
+    std::string configPath = getDefaultConfigDir() + "config.ini";
     std::string playlistPath;
     std::string mediaPath;
     std::string outputUrl;
-    std::string controlFile = "control.txt";
-    std::string addFile = "add_video.txt";
-    std::string statusFile = "status.json";
+    std::string controlFile = getDefaultConfigDir() + "control.txt";
+    std::string addFile = getDefaultConfigDir() + "add_video.txt";
+    std::string statusFile = getDefaultConfigDir() + "status.json";
     int statusInterval = 5;
     bool onceMode = false;
 
