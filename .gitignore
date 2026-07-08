@@ -1,0 +1,13 @@
+build/
+continuum
+.vscode/
+config.ini
+control.txt
+add_video.txt
+manual_skip.txt
+bot_control.txt
+player_log.txt
+status.json
+state.json
+*.log
+logs/
