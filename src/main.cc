@@ -11,12 +11,16 @@
 #include "Config.h"
 #include "ContinuumEngine.h"
 
+// Returns the default application configuration directory
+// Uses XDG_CONFIG_HOME when available, otherwise falls back to ~/.config
 std::string getDefaultConfigDir() {
     const char* xdgConfig = std::getenv("XDG_CONFIG_HOME");
     std::string base = xdgConfig ? xdgConfig : std::string(std::getenv("HOME")) + "/.config";
     return base + "/continuum/";
 }
 
+// Loads media paths from a playlist file
+// Lines beginning with '#' are treated as comments
 std::vector<std::string> loadPlaylistFile(const std::string& path) {
     std::vector<std::string> paths;
     std::ifstream f(path);
@@ -28,6 +32,7 @@ std::vector<std::string> loadPlaylistFile(const std::string& path) {
     return paths;
 }
 
+// Creates a human-readable timestamp for log messages
 std::string timestamp() {
     auto now = std::chrono::system_clock::now();
     std::time_t t = std::chrono::system_clock::to_time_t(now);
@@ -36,17 +41,23 @@ std::string timestamp() {
     return oss.str();
 }
 
+// Global log file used by the logging helper
 std::ofstream logFile;
 
+// Writes messages to both console and log file
 void log(const std::string& msg) {
     std::string line = "\n[" + timestamp() + "] " + msg;
     std::cout << line << "\n";
     if (logFile.is_open()) {
         logFile << line << "\n";
+
+        // Flush immediately so logs remain available if the
+        // application exits unexpectedly
         logFile.flush();
     }
 }
 
+// Prints command line usage information
 void printUsage() {
     std::cout << 
         "Usage: continuum [options]\n\n"
@@ -65,9 +76,14 @@ void printUsage() {
 }
 
 int main(int argc, char** argv) {
+    // Only show FFmpeg errors
+    // Suppresses verbose internal logging
     av_log_set_level(AV_LOG_ERROR);
+
+    // Open persistent application log
     logFile.open(getDefaultConfigDir() + "continuum.log", std::ios::app);
 
+    // Default file locations
     std::string configPath = getDefaultConfigDir() + "config.ini";
     std::string playlistPath;
     std::string mediaPath;
@@ -78,6 +94,7 @@ int main(int argc, char** argv) {
     int statusInterval = 5;
     bool onceMode = false;
 
+    // Parse command line arguments
     for (int i = 1; i < argc; i++) {
         std::string arg = argv[i];
         if (arg == "--config" && i + 1 < argc)
@@ -109,10 +126,12 @@ int main(int argc, char** argv) {
         }
     }
 
+    // Remove stale control/status files from previous runs
     std::remove(controlFile.c_str());
     std::remove(addFile.c_str());
     std::remove(statusFile.c_str());
 
+    // Validate required arguments
     if (onceMode && mediaPath.empty()) {
         log("Error: --once requires --media <path>");
         return 1;
@@ -125,10 +144,14 @@ int main(int argc, char** argv) {
     }
 
     try {
+        // Load application settings
         config cfg = loadconfig(configPath);
+
+        // Command line output overrides configuration files
         if (!outputUrl.empty())
             cfg.rtmpUrl = outputUrl;
 
+        // Build the list of media files
         std::vector<std::string> paths;
         if (!mediaPath.empty()) {
             paths.push_back(mediaPath);
@@ -139,37 +162,45 @@ int main(int argc, char** argv) {
             log("Error: Playlist is empty");
             return 1;
         }
-        cfg.mp4Path = paths[0];   // first file for construction
+        // First media file is required to initialize the sources
+        cfg.mp4Path = paths[0];
 
+        // Create the complete streaming engine
         ContinuumEngine engine(cfg);
         engine.setOnceMode(onceMode);
         engine.loadPlaylist(paths);
 
-{
-        EngineStatus s = engine.getStatus();
-        std::string tmpFile = statusFile + ".tmp";
+        // Write initial status before streaming begins
         {
-            std::ofstream sf(tmpFile);
-            sf << "{ \"current_path\": \"" << s.current_path << "\", "
-                << "\"video_pts\": " << s.video_pts << ", "
-                << "\"audio_pts\": " << s.audio_pts << ", "
-                << "\"paused\": " << (s.paused ? "true" : "false") << ", "
-                << "\"running\": " << (s.running ? "true" : "false") << ", "
-                << "\"video_pts_since_switch\": " << s.video_pts_since_switch << ", "
-                << "\"current_duration\": " << s.current_duration << " }";
-        }
-        std::rename(tmpFile.c_str(), statusFile.c_str());
-}
+            EngineStatus s = engine.getStatus();
+            std::string tmpFile = statusFile + ".tmp";
+            {
+                std::ofstream sf(tmpFile);
+                sf << "{ \"current_path\": \"" << s.current_path << "\", "
+                    << "\"video_pts\": " << s.video_pts << ", "
+                    << "\"audio_pts\": " << s.audio_pts << ", "
+                    << "\"paused\": " << (s.paused ? "true" : "false") << ", "
+                    << "\"running\": " << (s.running ? "true" : "false") << ", "
+                    << "\"video_pts_since_switch\": " << s.video_pts_since_switch << ", "
+                    << "\"current_duration\": " << s.current_duration << " }";
+            }
 
+            // Atomic replacement prevents readers from seeing
+            // a partially written status file
+            std::rename(tmpFile.c_str(), statusFile.c_str());
+        }
+
+        // Run streaming in its own thread so the main thread can
+        // handle commands and monitoring
         std::thread engineThread([&]() {
             engine.start();
         });
         
         auto last_status_write = std::chrono::steady_clock::now();
         
-        
-
+        // Main control loop
         while(true) {
+            // Check for dynamically added playlist files
             {
                 std::ifstream f(addFile);
                 std::string newPath;
@@ -181,6 +212,7 @@ int main(int argc, char** argv) {
             }
 
             bool stopped = false;
+            // Check for external control commands
             {
                 std::ifstream f(controlFile);
                 std::string cmd;
@@ -209,6 +241,7 @@ int main(int argc, char** argv) {
 
             auto now = std::chrono::steady_clock::now();
             
+            // Update status information periodically
             EngineStatus s = engine.getStatus();
 
             std::string tmpFile = statusFile + ".tmp";
@@ -226,9 +259,12 @@ int main(int argc, char** argv) {
 
             if (stopped)
                 break;
+
+            // Avoid continously polling files
             std::this_thread::sleep_for(std::chrono::seconds(2));
         }
 
+        // Wait for streaming thread to finish cleanly
         engineThread.join();
     }
     catch (const std::exception& e) {
