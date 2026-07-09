@@ -85,12 +85,14 @@ void ContinuumEngine::start() {
             continue;
         }
         if (skip_requested_) {
+            video_pts_at_switch = timeline_.getPts(true);
             skip_requested_ = false;
             std::string nextPath = playlist_.getNext();
             if(!nextPath.empty()) {
                 source_.switchFile(nextPath);
                 audioSource_.switchFile(nextPath);
             }
+            current_path_ = nextPath;
         }
 
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
