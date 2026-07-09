@@ -54,10 +54,6 @@ public:
     }
 
 private:
-    // Generates a blank frame
-    // Used as a helper for fallback frame generation
-    virtual void fill();
-
     // Converts decoded frames into the required output format
     // Handles resolution changes and pixel foramt conversion
     // using FFmpeg's libswscale
