@@ -50,18 +50,9 @@ bool ContinuumEngine::sendOneVideoFrame() {
         }
         std::string nextPath = playlist_.getNext();
         if (nextPath.empty()) return false;
-        {
-            // Protect shared path state from other threads
-            std::lock_guard<std::mutex> lock(path_mutex_);
-            current_path_ = nextPath;
-        }
         
-        // Save the timeline position where the media switch occured
-        video_pts_at_switch = timeline_.getPts(true);
-
-        // Replace both video and audio sources
-        source_.switchFile(nextPath);
-        audioSource_.switchFile(nextPath);
+        // Use performSwitch to better switch media and carry info to status
+        performSwitch(nextPath);
 
         frame = source_.next();
         if (!frame) return false;
@@ -143,14 +134,11 @@ void ContinuumEngine::start() {
 
         // Handle requested skip
         if (skip_requested_) {
-            video_pts_at_switch = timeline_.getPts(true);
             skip_requested_ = false;
             std::string nextPath = playlist_.getNext();
             if(!nextPath.empty()) {
-                source_.switchFile(nextPath);
-                audioSource_.switchFile(nextPath);
+                performSwitch(nextPath);
             }
-            current_path_ = nextPath;
         }
 
         // Prevent this loop from consuming excessive CPU
@@ -190,6 +178,17 @@ void ContinuumEngine::resume() {
 // Requests that playback move to the next media item
 void ContinuumEngine::skip() {
     skip_requested_ = true;
+}
+
+// Performs a better switch that carries updated media information
+void ContinuumEngine::performSwitch(const std::string& nextPath) {
+    {
+        std::lock_guard<std::mutex> lock(path_mutex_);
+        current_path_ = nextPath;
+    }
+    video_pts_at_switch = timeline_.getPts(true);
+    source_.switchFile(nextPath);
+    audioSource_.switchFile(nextPath);
 }
 
 // Returns current engine state for monitoring/control

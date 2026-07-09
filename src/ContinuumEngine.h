@@ -132,4 +132,7 @@ private:
     // Stores the video timeline position when a media switch occurs
     // Used for reporting playback relative to current file
     std::atomic<int64_t> video_pts_at_switch = 0;
+
+    // Helper to call switch even from SKIP command to switch video data
+    void performSwitch(const std::string& nextPath);
 };
