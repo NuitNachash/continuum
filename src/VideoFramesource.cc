@@ -26,24 +26,6 @@ VideoFrameSource::VideoFrameSource(const config& cfg) : cfg_(cfg) {
 
     std::cout << "[FrameSource] MP4 loaded: " << cfg.mp4Path << '\n';
 
-    //sws_ = sws_getContext(
-    //   dec_ctx_->width,
-    //    dec_ctx_->height,
-    //    dec_ctx_->pix_fmt,
-
-    //    cfg.width,
-    //    cfg.height,
-    //    AV_PIX_FMT_YUV420P,
-
-    //    SWS_BILINEAR,
-    //    nullptr,
-    //    nullptr,
-    //    nullptr
-    //);
-
-    //if (!sws_)
-    //    throw std::runtime_error("Failed to create sws_context");
-
     scaled_frame_ = av_frame_alloc();
     scaled_frame_->format = AV_PIX_FMT_YUV420P;
     scaled_frame_->width = cfg_.width;
@@ -52,7 +34,6 @@ VideoFrameSource::VideoFrameSource(const config& cfg) : cfg_(cfg) {
     int ret2 = av_frame_get_buffer(scaled_frame_, 32);
     if (ret2 < 0)
         throw std::runtime_error("Failed to allocate scaled frame buffer");
-    
 }
 
 void VideoFrameSource::openFile(const std::string& path){
@@ -81,7 +62,6 @@ void VideoFrameSource::openFile(const std::string& path){
     av_packet_unref(pkt_);
     av_seek_frame(fmt_, video_stream_index_, 0, AVSEEK_FLAG_BACKWARD);
 
-    
     AVStream* stream = fmt_->streams[video_stream_index_];
 
     const AVCodec* codec = avcodec_find_decoder(stream->codecpar->codec_id);
@@ -121,11 +101,8 @@ void VideoFrameSource::closeFile(){
 }
 
 void VideoFrameSource::switchFile(const std::string& path){
-    //int64_t prev_end_pts = pts_offset_ + frame_count_;
     closeFile();
     openFile(path);
-    //frame_count_ = 0;
-    //pts_offset_ = prev_end_pts;
 }
 
 VideoFrameSource::~VideoFrameSource() {
@@ -148,9 +125,6 @@ AVFrame* VideoFrameSource::next() {
         int ret = av_read_frame(fmt_, pkt_);
         if (ret < 0) {
             return nullptr;
-            //av_seek_frame(fmt_, video_stream_index_, 0, AVSEEK_FLAG_BACKWARD);
-            //avcodec_flush_buffers(dec_ctx_);
-            //continue;
         }
 
         if (pkt_->stream_index != video_stream_index_) {
@@ -172,7 +146,6 @@ AVFrame* VideoFrameSource::next() {
                 0, dec_ctx_->height,
                 scaled_frame_->data, scaled_frame_->linesize
             );
-            //scaled_frame_->pts = pts_offset_ + frame_count_++;
             return scaled_frame_;
         }
     }

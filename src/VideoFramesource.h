@@ -7,7 +7,6 @@ extern "C" {
     #include <libavutil/audio_fifo.h>
     #include <libswscale/swscale.h>
 }
-
 #include "Config.h"
 
 class VideoFrameSource {

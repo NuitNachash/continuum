@@ -16,7 +16,6 @@ public:
 
     explicit AudioFrameSource(const config& cfg, AVRational audio_time_base);
     ~AudioFrameSource();
-    //StreamClock clock_;
     AVRational audio_time_base_;
     AudioFrameSource(const AudioFrameSource&) = delete;
     AudioFrameSource& operator=(const AudioFrameSource&) = delete;
@@ -52,8 +51,6 @@ private:
 
     int audio_stream_index_ = -1;
 
-    //int64_t audio_pts_ = 0;
-
     bool initAudioFifo();
     bool pushToFifo(AVFrame* frame);
     AVFrame* popFifoFrame1024();
@@ -62,9 +59,5 @@ private:
     int fifo_channels_ = 2;
     AVSampleFormat fifo_format_ = AV_SAMPLE_FMT_FLTP;
 
-    //int64_t first_pts_ = 0;
-    //int64_t pts_offset_ = 0;
-
     std::string current_path_;
-
 };

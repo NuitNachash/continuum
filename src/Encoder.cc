@@ -1,9 +1,7 @@
 #include "Encoder.h"
-
 extern "C" {
     #include <libswresample/swresample.h>
 }
-
 #include <iostream>
 #include <stdexcept>
 
@@ -84,12 +82,6 @@ Encoder::~Encoder() {
 }
 
 int Encoder::sendVideo(AVFrame* frame) {
-    //std::cout << "[Encoder] Frame ptr: " << frame
-    //      << "  " << frame->width
-    //      << "x" << frame->height
-    //      << " format=" << frame->format
-    //      << std::endl;
-
     int ret = avcodec_send_frame(video_ctx_, frame);
     if (ret < 0 && ret != AVERROR(EAGAIN)) {
         char err[256];

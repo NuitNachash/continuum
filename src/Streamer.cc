@@ -79,23 +79,27 @@ void streamLog(const std::string& msg) {
     }
 }
 
-//AVRational Streamer::time_base() const {
- //   return stream_->time_base;
-//}
-
-///int Streamer::stream_index() const {
-//    return stream_->index;
-//}
+static auto last_video_write = std::chrono::steady_clock::now();
+static auto last_audio_write = std::chrono::steady_clock::now();
 
 int Streamer::write(AVPacket* pkt) {
     streamLogFile.open("continuum_streamer.log", std::ios::app);
     auto t0 = std::chrono::steady_clock::now();
+
+    bool isVideo = (pkt->stream_index == video_stream_->index);
+    if (isVideo) {
+        auto gap = std::chrono::duration_cast<std::chrono::milliseconds>(t0 - last_video_write).count();
+        if (gap > 100) streamLog("[Streamer] video write gap: " + std::to_string(gap) + "ms");
+        last_video_write = t0;
+    } else {
+        auto gap = std::chrono::duration_cast<std::chrono::milliseconds>(t0 - last_audio_write).count();
+        if (gap > 100) streamLog("[Streamer] audio write gap: " + std::to_string(gap) + "ms");
+        last_audio_write = t0;
+    }
     int ret = av_interleaved_write_frame(fmt_, pkt);
     auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                   std::chrono::steady_clock::now() - t0).count();
-    /*if (ms > 50)
-        std::cerr << "[Streamer] write took " << ms << "ms\n";
-        */
+
     if (ret < 0) {
         char err[256];
         av_strerror(ret, err, sizeof(err));

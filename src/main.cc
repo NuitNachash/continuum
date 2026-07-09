@@ -39,7 +39,7 @@ std::string timestamp() {
 std::ofstream logFile;
 
 void log(const std::string& msg) {
-    std::string line = "[" + timestamp() + "] " + msg;
+    std::string line = "\n[" + timestamp() + "] " + msg;
     std::cout << line << "\n";
     if (logFile.is_open()) {
         logFile << line << "\n";
@@ -64,8 +64,6 @@ void printUsage() {
         "  --help                  Show this message\n";
 }
 
-
-
 int main(int argc, char** argv) {
     av_log_set_level(AV_LOG_ERROR);
     logFile.open(getDefaultConfigDir() + "continuum.log", std::ios::app);
@@ -79,8 +77,6 @@ int main(int argc, char** argv) {
     std::string statusFile = getDefaultConfigDir() + "status.json";
     int statusInterval = 5;
     bool onceMode = false;
-
-    
 
     for (int i = 1; i < argc; i++) {
         std::string arg = argv[i];
@@ -174,7 +170,6 @@ int main(int argc, char** argv) {
         
 
         while(true) {
-            //std::cerr << "[DEBUG] watcher loop tick\n";
             {
                 std::ifstream f(addFile);
                 std::string newPath;
@@ -184,15 +179,12 @@ int main(int argc, char** argv) {
                     std::remove(addFile.c_str());
                 }
             }
-            //std::cerr << "[DEBUG] after add-file check\n";
-        
+
             bool stopped = false;
             {
                 std::ifstream f(controlFile);
                 std::string cmd;
-                //std::cerr << "[DEBUG] checking control file: " << controlFile << "\n";
                 if (std::getline(f, cmd) && !cmd.empty()) {
-                    //std::cerr << "[DEBUG] read command: " << cmd << "\\n";
                     if (cmd == "PAUSE") {
                         engine.pause();
                         log("[PAUSE] Video is paused, use resume command to resume video");
@@ -214,13 +206,11 @@ int main(int argc, char** argv) {
                     std::remove(controlFile.c_str());
                 }
             }
-            //std::cerr << "[DEBUG] after control-file check\n";
 
             auto now = std::chrono::steady_clock::now();
             
             EngineStatus s = engine.getStatus();
-            //std::cerr << "[DEBUG] after getStatus\n";
-            
+
             std::string tmpFile = statusFile + ".tmp";
             {
                 std::ofstream sf(tmpFile);
@@ -233,20 +223,10 @@ int main(int argc, char** argv) {
                     << "\"current_duration\": " << s.current_duration << " }";
             }
             std::rename(tmpFile.c_str(), statusFile.c_str());
-            /*{
-                std::ofstream sf(statusFile);
-                sf << "{ \"current_path\": \"" << s.current_path << "\", "
-                    << "\"video_pts\": " << s.video_pts << ", "
-                    << "\"audio_pts\": " << s.audio_pts << ", "
-                    << "\"paused\": " << (s.paused ? "true" : "false") << ", "
-                    << "\"running\": " << (s.running ? "true" : "false") << " }";
-            }*/
-           
-            //std::cerr << "[DEBUG] after status write\n";
+
             if (stopped)
                 break;
             std::this_thread::sleep_for(std::chrono::seconds(2));
-            //std::cerr << "[DEBUG] after sleep\n";
         }
 
         engineThread.join();

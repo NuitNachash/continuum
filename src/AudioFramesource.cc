@@ -1,6 +1,4 @@
 #include "AudioFramesource.h"
-//#include "StreamClock.h"
-
 #include <cstring>
 #include <stdexcept>
 #include <cstdint>
@@ -20,17 +18,11 @@ AudioFrameSource::AudioFrameSource(const config& cfg, AVRational tb) : cfg_(cfg)
     pkt_ = av_packet_alloc();
     decoded_frame_ = av_frame_alloc();
     converted_frame_ = av_frame_alloc();
-    //AVAudioFifo* audio_fifo_ = nullptr;
-    //int fifo_channels_ = 2;
-    //AVSampleFormat fifo_format_ = AV_SAMPLE_FMT_FLTP;
-    
 
     if (!pkt_ || !decoded_frame_ || !converted_frame_)
         throw std::runtime_error("AudioFrameSource: allocation failed");
 
-
     av_frame_get_buffer(converted_frame_, 32);
-    //audio_pts_ = 0;
     openFile(cfg.mp4Path);
 
     std::cout << "[AudioFrameSource] Audio stream loaded\n";
@@ -64,22 +56,11 @@ AVFrame* AudioFrameSource::next() {
     if (av_audio_fifo_size(audio_fifo_) >= 1024) {
         AVFrame* out = popFifoFrame1024();
         if (out) {
-            //out->pts = pts_offset_ + audio_pts_;
-            //out->pts = audio_pts_;
-            /*audio_pts_ += av_rescale_q(
-                out->nb_samples, 
-                AVRational{1, cfg_.samplerate}, 
-                audio_time_base_
-            );*/
-
             return out;
         }
     }
     while(true) {
         if (av_read_frame(fmt_, pkt_) < 0) {
-            //av_seek_frame(fmt_, audio_stream_index_, 0, AVSEEK_FLAG_BACKWARD);
-            //avcodec_flush_buffers(dec_ctx_);
-            //continue;
             return nullptr;
         }
 
@@ -109,13 +90,11 @@ AVFrame* AudioFrameSource::next() {
             dec_ctx_->sample_rate,
             AV_ROUND_UP
         );
-
         
         converted_frame_->format = AV_SAMPLE_FMT_FLTP;
         converted_frame_->ch_layout = out_ch_layout_;
         converted_frame_->sample_rate = cfg_.samplerate;
 
-        
         av_frame_get_buffer(converted_frame_, 0);
         
         av_frame_make_writable(converted_frame_);
@@ -130,26 +109,15 @@ AVFrame* AudioFrameSource::next() {
         if (samples < 0)
             continue;
         converted_frame_->nb_samples = samples;
-        //converted_frame_->pts = audio_pts_;
-
+        
         if (!pushToFifo(converted_frame_))
             continue;
 
-        //std::cerr << "[Audio] fifo size=" << av_audio_fifo_size(audio_fifo_) << "\n";
-
         int samples_per_call = cfg_.samplerate / cfg_.fps;
         AVFrame* out = popFifoFrame1024();
-        //std::cerr << "[Audio] fifo size after pop=" << av_audio_fifo_size(audio_fifo_) << "\n";
 
         if(!out) 
             continue;
-        //out->pts = pts_offset_ + audio_pts_;
-        /*out->pts = audio_pts_;
-        audio_pts_ += av_rescale_q(
-            out->nb_samples,
-            AVRational{1, cfg_.samplerate},
-            audio_time_base_
-        );*/
 
         return out;
     }
@@ -246,8 +214,6 @@ void AudioFrameSource::openFile(const std::string& path){
     if (audio_stream_index_ < 0)
         throw std::runtime_error("No audio stream found");
 
-    //av_read_frame(fmt_, pkt_);
-    //first_pts_ = pkt_->pts;
     av_packet_unref(pkt_);
     av_seek_frame(fmt_, audio_stream_index_, 0, AVSEEK_FLAG_BACKWARD);
     
@@ -277,16 +243,12 @@ void AudioFrameSource::closeFile() {
 }
 
 void AudioFrameSource::switchFile(const std::string& path) {
-    //int64_t prev_end_pts = audio_pts_;  
     closeFile();
     openFile(path);
     if (swr_) {
         swr_free(&swr_);
     }
-    /*AVStream* stream = fmt_->streams[audio_stream_index_];
-    int64_t first_pts_rescaled = av_rescale_q(first_pts_, stream->time_base, audio_time_base_);
-    */
-    //pts_offset_ = prev_end_pts - first_pts_rescaled;
+
     initResampler();
     av_audio_fifo_reset(audio_fifo_);
 }
