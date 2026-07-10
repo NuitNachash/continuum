@@ -49,13 +49,26 @@ bool ContinuumEngine::sendOneVideoFrame() {
             return false;
         }
         std::string nextPath = playlist_.getNext();
-        if (nextPath.empty()) return false;
-        
-        // Use performSwitch to better switch media and carry info to status
-        performSwitch(nextPath);
+        if (nextPath.empty()) {
 
-        frame = source_.next();
-        if (!frame) return false;
+            // If nothing queued; replay current file rather than stopping stream
+            std::string fallbackPath;
+            {
+                std::lock_guard<std::mutex> lock(path_mutex_);
+                fallbackPath = current_path_;
+            }
+            // Switch to same file again creating a loop
+            performSwitch(fallbackPath);
+            frame = source_.next();
+
+            // If it still can't recover, then end stream
+            if (!frame) return false;
+        } else {
+            // Continue through queue
+            performSwitch(nextPath);
+            frame = source_.next();
+            if(!frame) return false;
+        }
     }
 
     // Assign the next video timestamp and advance the timeline

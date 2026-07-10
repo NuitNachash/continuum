@@ -2,6 +2,7 @@
 #include <string>
 #include <vector>
 #include <mutex>
+#include <deque>
 
 /*  Thread-safe manager for storing and navigating through
     a list of media files
@@ -33,10 +34,10 @@ private:
     // The playlist can be modified while streaming is running
     mutable std::mutex mutex_;
 
-    // Collection of media file paths to play
-    std::vector<std::string> playlist_;
-
     // Current position in the playlist
     // Used to determine which item should be return next
     size_t index_ = 0;
+
+    // Create a queue of media 
+    std::deque<std::string> queue_; 
 };
