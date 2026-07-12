@@ -167,23 +167,6 @@ An external Python (or any language) controller can poll this file to make timin
 
 ## Architecture
 
-```
-                 Controller (Python script, bot, etc.)
-                          │  file-based IPC
-                          ▼
-                 ContinuumEngine (orchestrator)
-        ┌─────────────────┼─────────────────┬───────────────┐
-        ▼                 ▼                 ▼               ▼
- VideoFrameSource   AudioFrameSource   TimelineManager  PlaylistManager
-        │                 │                 │               │
-        └────────┬────────┘                 │               │
-                  ▼                          │               │
-              Encoder ─────────────────────────────────────────
-                  │
-                  ▼
-              Streamer (RTMP output via libavformat)
-```
-
 - **VideoFrameSource / AudioFrameSource** — demux, decode, scale/resample each media file. Support hot file-switching (`switchFile()`) without tearing down the whole pipeline.
 - **TimelineManager** — owns the global, monotonic PTS/DTS counters for both video and audio streams, ensuring continuity across file switches regardless of each file's own internal timestamps.
 - **PlaylistManager** — a thread-safe queue of media paths. Supports runtime additions from the control thread while the playback thread is actively consuming from it.
@@ -202,12 +185,13 @@ All engine state shared between the playback thread and the control-file-watchin
 
 ## Roadmap
 
-- [ ] Graceful handling of unreadable/corrupt playlist entries (skip and continue rather than crash)
-- [ ] Static image overlay support (logo/watermark compositing)
-- [ ] Text overlay support (via `libavfilter`)
-- [ ] Automatic RTMP reconnection on write failure
-- [ ] Unix socket-based control/status as an alternative to file polling
-- [ ] Optional hardware-accelerated encode path
+- Graceful handling of unreadable/corrupt playlist entries (skip and continue rather than crash)
+- Static image overlay support (logo/watermark compositing)
+- Text overlay support (via `libavfilter`)
+- Potential Speech-To-Text overlay support
+- Automatic RTMP reconnection on write failure
+- Unix socket-based control/status as an alternative to file polling
+- Optional hardware-accelerated encode path
 
 ## License
 
