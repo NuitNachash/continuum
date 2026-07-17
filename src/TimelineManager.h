@@ -43,6 +43,9 @@ public:
     //  Zero     -> timelines are sync
     int compare(AVRational video_tb, AVRational audio_tb) const;
 
+    // Returns how much for the engine to nudge the audio compared to the video frames
+    void nudgeAudioPts(int64_t delta);
+
 
 private:
     // Current video presentation timestamp
