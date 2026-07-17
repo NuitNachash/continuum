@@ -135,6 +135,7 @@ bool ContinuumEngine::sendOneAudioFrame(AVFrame* aframe) {
 // based on the current timeline position
 void ContinuumEngine::start() {
     running_ = true;
+    int64_t frame_count = 0;
     stream_start_ = std::chrono::steady_clock::now();
     std::cout << "[Engine] streaming - Ctrl+C to stop\n";
 
@@ -169,6 +170,16 @@ void ContinuumEngine::start() {
                 // If no audio is available, continue advancing video
                 if (!sendOneVideoFrame()) break;
             }
+        }
+        if (++frame_count % 60 == 0) {
+          int64_t video_us = av_rescale_q(timeline_.getPts(true), encoder_.video_time_base(), {1, 1000000});
+          int64_t audio_us = av_rescale_q(timeline_.getPts(false), endocer_.audio_time_base(), {1, 1000000});
+          int64_t drift_us = video_us - audio_us;
+
+          if (std::abs(drift_us) > 10000) {
+            int64_t correction = av_rescale_q(drift_us, {1, 1000000}, encoder_.audio_time_base());
+            timeline_.nudgeAudioPts(correction);
+          }
         }
     }
 }
