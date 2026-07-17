@@ -122,19 +122,6 @@ int Streamer::write(AVPacket* pkt) {
     // Determine whether this packet contains video or audio
     bool isVideo = (pkt->stream_index == video_stream_->index);
 
-    // Monitor gaps between packets
-    // Large gaps may indicate encoder stalls or network issues
-    // Temporary debugging for possible desync issues
-    if (isVideo) {
-        auto gap = std::chrono::duration_cast<std::chrono::milliseconds>(t0 - last_video_write).count();
-        if (gap > 100) streamLog("[Streamer] video write gap: " + std::to_string(gap) + "ms");
-        last_video_write = t0;
-    } else {
-        auto gap = std::chrono::duration_cast<std::chrono::milliseconds>(t0 - last_audio_write).count();
-        if (gap > 100) streamLog("[Streamer] audio write gap: " + std::to_string(gap) + "ms");
-        last_audio_write = t0;
-    }
-
     // Write packet into the FLV muxer and send it to RTMP
     int ret = av_interleaved_write_frame(fmt_, pkt);
 
