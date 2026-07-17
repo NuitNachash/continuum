@@ -173,7 +173,7 @@ void ContinuumEngine::start() {
         }
         if (++frame_count % 60 == 0) {
           int64_t video_us = av_rescale_q(timeline_.getPts(true), encoder_.video_time_base(), {1, 1000000});
-          int64_t audio_us = av_rescale_q(timeline_.getPts(false), endocer_.audio_time_base(), {1, 1000000});
+          int64_t audio_us = av_rescale_q(timeline_.getPts(false), encoder_.audio_time_base(), {1, 1000000});
           int64_t drift_us = video_us - audio_us;
 
           if (std::abs(drift_us) > 10000) {
