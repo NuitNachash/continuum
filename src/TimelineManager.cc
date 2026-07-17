@@ -55,3 +55,8 @@ int TimelineManager::compare(AVRational video_tb, AVRational audio_tb) const {
         audio_tb
     );
 }
+
+// Used to nudge the audio back closer to video to prevent desync
+void TimelineManager::nudgeAudioPts(int64_t delta) {
+    audio_pts_ -= delta;
+}
