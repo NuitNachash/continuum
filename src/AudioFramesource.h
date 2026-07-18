@@ -42,6 +42,9 @@ public:
         return av_audio_fifo_size(audio_fifo_);
     }
 
+    // Flush left over stale audio 
+    void flushFifo();
+
 private:
     // Initializes the decoder 
     void initDecoder();
