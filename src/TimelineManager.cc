@@ -60,3 +60,8 @@ int TimelineManager::compare(AVRational video_tb, AVRational audio_tb) const {
 void TimelineManager::nudgeAudioPts(int64_t delta) {
     audio_pts_ -= delta;
 }
+
+// Resets audio PTS to match video on switch to prevent desync
+void TimelineManager::setAudioPts(int64_t pts) {
+    audio_pts_ = pts;
+}
