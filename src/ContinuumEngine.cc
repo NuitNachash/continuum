@@ -178,7 +178,7 @@ void ContinuumEngine::start() {
 
           if (std::abs(drift_us) > 10000) {
             int64_t correction = av_rescale_q(drift_us, {1, 1000000}, encoder_.audio_time_base());
-            timeline_.nudgeAudioPts(correction);
+            timeline_.nudgeAudioPts(correction / 20);
           }
         }
     }
