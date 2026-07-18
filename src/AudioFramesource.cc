@@ -310,7 +310,10 @@ void AudioFrameSource::switchFile(const std::string& path) {
     av_audio_fifo_reset(audio_fifo_);
 }
 
-
+// Remove any stale audio to help with audio/video resync on video switch
+void AudioFrameSource::flushFifo() {
+    av_audio_fifo_reset(fifo_);
+}
 
 AudioFrameSource::~AudioFrameSource() {
     // Clean up all allocated FFmpeg objects
