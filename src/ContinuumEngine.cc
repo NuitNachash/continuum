@@ -213,6 +213,15 @@ void ContinuumEngine::performSwitch(const std::string& nextPath) {
     video_pts_at_switch = timeline_.getPts(true);
     source_.switchFile(nextPath);
     audioSource_.switchFile(nextPath);
+    // Protection against audio/video desync on video switch by matching audio with video
+    int64_t video_pts = timeline_.getPts(true);
+    int64_t audio_pts_synced = av_rescale_q(
+        video_pts,
+        encoder_.video_time_base(),
+        encoder_.audio_time_base()
+    );
+    audioSource_.flushFifo();
+    timeline_.setAudioPts(audio_pts_synced);
 }
 
 // Returns current engine state for monitoring/control
