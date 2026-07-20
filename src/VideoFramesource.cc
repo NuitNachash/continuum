@@ -184,6 +184,7 @@ AVFrame* VideoFrameSource::next() {
         // Retrieve decoded video frame
         ret = avcodec_receive_frame(dec_ctx_, frame_);
         if (ret == 0) {
+            frame_->pts -= first_pts_;
             // Convert decoded frame to the format expected
             // by the encoder
             sws_scale(

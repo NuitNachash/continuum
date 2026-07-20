@@ -65,3 +65,9 @@ void TimelineManager::nudgeAudioPts(int64_t delta) {
 void TimelineManager::setAudioPts(int64_t pts) {
     audio_pts_ = pts;
 }
+
+// Resets audio PTS to match video on switch to prevent desync
+void TimelineManager::setVideoPts(int64_t pts) {
+    video_pts_ = pts;
+}
+

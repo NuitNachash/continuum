@@ -54,6 +54,8 @@ Streamer::Streamer(const config& cfg, const Encoder& encoder) {
     );
 
     audio_stream_->time_base = encoder.audio_time_base();
+    
+    av_opt_set(fmt_->priv_data, "timeout", "5000000", 0);
 
     // Open the RTMP connection
     ret = avio_open(&fmt_->pb, cfg.rtmpUrl.c_str(), AVIO_FLAG_WRITE);

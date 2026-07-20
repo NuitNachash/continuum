@@ -45,6 +45,8 @@ public:
     // Flush left over stale audio 
     void flushFifo();
 
+    int64_t first_audio_pts_ = 0;
+
 private:
     // Initializes the decoder 
     void initDecoder();

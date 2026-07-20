@@ -31,14 +31,6 @@ void ContinuumEngine::addMedia(const std::string& path) {
 
 // Reads, timestamps, encodes, and streams one video frame
 bool ContinuumEngine::sendOneVideoFrame() {
-    // Calculate when this frame should be displayed based on the
-    // current video timeline position
-    double video_time_sec = timeline_.getPts(true) * av_q2d(encoder_.video_time_base());
-    auto target = stream_start_ + std::chrono::duration<double>(video_time_sec);
-    
-    // Sync playback speed with real time
-    std::this_thread::sleep_until(target);
-
     AVFrame* frame = source_.next();
 
     // End of current media file
@@ -97,6 +89,15 @@ bool ContinuumEngine::sendOneVideoFrame() {
 
 // Encodes and streams one audio frame
 bool ContinuumEngine::sendOneAudioFrame(AVFrame* aframe) {
+    // Calculate when this frame should be displayed based on the
+    // current video timeline position
+    double audio_time_sec = timeline_.getPts(false) * av_q2d(encoder_.audio_time_base());
+    auto target = stream_start_ + std::chrono::duration<double>(audio_time_sec);
+
+    // Sync playback speed with real time
+    while (running_ && std::chrono::steady_clock::now() < target)
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+
     // Assign the current audio timestamp
     aframe->pts = timeline_.getPts(false);
 
@@ -171,14 +172,14 @@ void ContinuumEngine::start() {
                 if (!sendOneVideoFrame()) break;
             }
         }
-        if (++frame_count % 60 == 0) {
+        if (++frame_count % 30 == 0) {
           int64_t video_us = av_rescale_q(timeline_.getPts(true), encoder_.video_time_base(), {1, 1000000});
           int64_t audio_us = av_rescale_q(timeline_.getPts(false), encoder_.audio_time_base(), {1, 1000000});
           int64_t drift_us = video_us - audio_us;
 
-          if (std::abs(drift_us) > 5000) {
+          if (std::abs(drift_us) > 3000) {
             int64_t correction = av_rescale_q(drift_us, {1, 1000000}, encoder_.audio_time_base());
-            timeline_.nudgeAudioPts(correction / 20);
+            timeline_.nudgeAudioPts(correction / 15);
           }
         }
     }
@@ -214,14 +215,14 @@ void ContinuumEngine::performSwitch(const std::string& nextPath) {
     source_.switchFile(nextPath);
     audioSource_.switchFile(nextPath);
     // Protection against audio/video desync on video switch by matching audio with video
-    int64_t video_pts = timeline_.getPts(true);
-    int64_t audio_pts_synced = av_rescale_q(
-        video_pts,
-        encoder_.video_time_base(),
-        encoder_.audio_time_base()
+    int64_t audio_pts = timeline_.getPts(true);
+    int64_t video_pts_synced = av_rescale_q(
+        audio_pts,
+        encoder_.audio_time_base(),
+        encoder_.video_time_base()
     );
     audioSource_.flushFifo();
-    timeline_.setAudioPts(audio_pts_synced);
+    timeline_.setVideoPts(video_pts_synced);
 }
 
 // Returns current engine state for monitoring/control

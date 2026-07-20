@@ -100,6 +100,8 @@ AVFrame* AudioFrameSource::next() {
         int ret = avcodec_receive_frame(dec_ctx_, decoded_frame_);
         if (ret < 0)
             continue;
+        
+        decoded_frame_->pts -= first_audio_pts_;
 
         const uint8_t * const *in_data = (const uint8_t * const *)decoded_frame_->extended_data;
 
@@ -286,6 +288,20 @@ void AudioFrameSource::openFile(const std::string& path){
     if (avcodec_open2(dec_ctx_, codec, nullptr) < 0) {
         throw std::runtime_error("Failed to open decoder");
     }
+	
+    // Read and record the first audio packet's PTS, then seek back
+    AVPacket* tmp = av_packet_alloc();
+    while(av_read_frame(fmt_, tmp) >= 0) {
+        if (tmp->stream_index == audio_stream_index_) {
+            first_audio_pts_ = tmp->pts;
+            av_packet_unref(tmp);
+            break;
+        }
+        av_packet_unref(tmp);
+    }
+    av_packet_free(&tmp);
+    av_seek_frame(fmt_, audio_stream_index_, 0, AVSEEK_FLAG_BACKWARD);
+
 }
 
 void AudioFrameSource::closeFile() {
