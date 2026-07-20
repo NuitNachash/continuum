@@ -49,6 +49,9 @@ public:
     // Sets audio PTS to match video on switch to prevent desync
     void setAudioPts(int64_t pts);
 
+    // Sets video PTS to match audio on switch to prevent desync
+    void setVideoPts(int64_t pts);
+
 
 private:
     // Current video presentation timestamp
