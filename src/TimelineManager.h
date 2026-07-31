@@ -46,6 +46,8 @@ public:
     // Returns how much for the engine to nudge the audio compared to the video frames
     void nudgeAudioPts(int64_t delta);
 
+    void nudgeVideoPts(int64_t delta);
+
     // Sets audio PTS to match video on switch to prevent desync
     void setAudioPts(int64_t pts);
 

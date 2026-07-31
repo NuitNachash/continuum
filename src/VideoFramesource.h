@@ -8,6 +8,7 @@ extern "C" {
     #include <libswscale/swscale.h>
 }
 #include "Config.h"
+#include <queue>
 
 /*  Provides decoded video frames from a media file
 
@@ -53,6 +54,8 @@ public:
         return fmt_->duration;
     }
 
+    AVFrame* nextBuffered();
+
 private:
     // Converts decoded frames into the required output format
     // Handles resolution changes and pixel foramt conversion
@@ -93,4 +96,7 @@ private:
 
     // Releases decoder and input file resources
     void closeFile();
+
+    std::queue<AVFrame*> frame_buffer_;
+    static constexpr int BUFFER_SIZE = 3;
 };

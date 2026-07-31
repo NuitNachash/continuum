@@ -132,6 +132,10 @@ void VideoFrameSource::closeFile(){
 
 // Switches playback to another media file
 void VideoFrameSource::switchFile(const std::string& path){
+    while (!frame_buffer_.empty()){
+        av_frame_free(&frame_buffer_.front());
+        frame_buffer_.pop();
+    }
     closeFile();
     openFile(path);
 }
@@ -196,4 +200,22 @@ AVFrame* VideoFrameSource::next() {
             return scaled_frame_;
         }
     }
+}
+
+AVFrame* VideoFrameSource::nextBuffered() {
+    while ((int)frame_buffer_.size() < BUFFER_SIZE) {
+        AVFrame* f = next();
+        if (!f)
+            break;
+
+        AVFrame* copy = av_frame_clone(f);
+        frame_buffer_.push(copy);
+    }
+
+    if (frame_buffer_.empty())
+        return nullptr;
+
+    AVFrame* out = frame_buffer_.front();
+    frame_buffer_.pop();
+    return out;
 }

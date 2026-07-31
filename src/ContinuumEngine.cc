@@ -31,7 +31,7 @@ void ContinuumEngine::addMedia(const std::string& path) {
 
 // Reads, timestamps, encodes, and streams one video frame
 bool ContinuumEngine::sendOneVideoFrame() {
-    AVFrame* frame = source_.next();
+    AVFrame* frame = source_.nextBuffered();
 
     // End of current media file
     // Move to the next playlist item if continuous playback is enabled
@@ -51,14 +51,14 @@ bool ContinuumEngine::sendOneVideoFrame() {
             }
             // Switch to same file again creating a loop
             performSwitch(fallbackPath);
-            frame = source_.next();
+            frame = source_.nextBuffered();
 
             // If it still can't recover, then end stream
             if (!frame) return false;
         } else {
             // Continue through queue
             performSwitch(nextPath);
-            frame = source_.next();
+            frame = source_.nextBuffered();
             if(!frame) return false;
         }
     }
@@ -178,7 +178,7 @@ void ContinuumEngine::start() {
           int64_t drift_us = video_us - audio_us;
 
           if (std::abs(drift_us) > 3000) {
-            int64_t correction = av_rescale_q(drift_us, {1, 1000000}, encoder_.audio_time_base());
+            int64_t correction = av_rescale_q(drift_us, {1, 1000000}, encoder_.video_time_base());
             timeline_.nudgeAudioPts(correction / 15);
           }
         }
