@@ -67,11 +67,11 @@ void TimelineManager::nudgeVideoPts(int64_t delta) {
 
 // Resets audio PTS to match video on switch to prevent desync
 void TimelineManager::setAudioPts(int64_t pts) {
-    audio_pts_ = pts;
+    audio_pts_ = pts - audio_offset_.load();
 }
 
 // Resets audio PTS to match video on switch to prevent desync
 void TimelineManager::setVideoPts(int64_t pts) {
-    video_pts_ = pts;
+    video_pts_ = pts - video_offset_.load();
 }
 

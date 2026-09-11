@@ -8,6 +8,7 @@
 #include <fstream>
 #include <iomanip>
 #include <sstream>
+#include <csignal>
 #include "Config.h"
 #include "ContinuumEngine.h"
 
@@ -75,7 +76,20 @@ void printUsage() {
         "  --help                  Show this message\n";
 }
 
+static ContinuumEngine* g_engine = nullptr;
+void signalHandler(int sig) {
+    if (g_engine) {
+        g_engine->stop();
+        g_engine->forceClose();
+    }
+    std::exit(0);
+}
+
 int main(int argc, char** argv) {
+
+    signal(SIGTERM, signalHandler);
+    signal(SIGINT, signalHandler);
+
     // Only show FFmpeg errors
     // Suppresses verbose internal logging
     av_log_set_level(AV_LOG_ERROR);
@@ -168,13 +182,19 @@ int main(int argc, char** argv) {
         // Create the complete streaming engine
         ContinuumEngine engine(cfg);
         engine.setOnceMode(onceMode);
-        engine.loadPlaylist(paths);
+        for(size_t i = 1; i < paths.size(); i++)
+            engine.addMedia(paths[i]);
 
         // Write initial status before streaming begins
         {
             EngineStatus s = engine.getStatus();
             std::string tmpFile = statusFile + ".tmp";
             {
+                auto now_t = std::chrono::system_clock::now();
+                std::time_t t = std::chrono::system_clock::to_time_t(now_t);
+                std::ostringstream ts;
+                ts << std::put_time(std::localtime(&t), "%Y-%m-%d %H:%M:%S");
+
                 std::ofstream sf(tmpFile);
                 sf << "{ \"current_path\": \"" << s.current_path << "\", "
                     << "\"video_pts\": " << s.video_pts << ", "
@@ -182,13 +202,16 @@ int main(int argc, char** argv) {
                     << "\"paused\": " << (s.paused ? "true" : "false") << ", "
                     << "\"running\": " << (s.running ? "true" : "false") << ", "
                     << "\"video_pts_since_switch\": " << s.video_pts_since_switch << ", "
-                    << "\"current_duration\": " << s.current_duration << " }";
+                    << "\"current_duration\": " << s.current_duration << ", "
+                    << "\"timestamp\": \"" << ts.str() << "\"  }";
             }
 
             // Atomic replacement prevents readers from seeing
             // a partially written status file
             std::rename(tmpFile.c_str(), statusFile.c_str());
         }
+
+        g_engine = &engine;
 
         // Run streaming in its own thread so the main thread can
         // handle commands and monitoring
@@ -231,6 +254,7 @@ int main(int argc, char** argv) {
                     }
                     else if (cmd == "STOP") {
                         engine.stop();
+                        engine.forceClose();
                         log("[STOP] Stream is stopped and will exit.");
                         stopped = true;
                     }
@@ -246,6 +270,11 @@ int main(int argc, char** argv) {
 
             std::string tmpFile = statusFile + ".tmp";
             {
+                auto now_t = std::chrono::system_clock::now();
+                std::time_t t = std::chrono::system_clock::to_time_t(now_t);
+                std::ostringstream ts;
+                ts << std::put_time(std::localtime(&t), "%Y-%m-%d %H:%M:%S");
+
                 std::ofstream sf(tmpFile);
                 sf << "{ \"current_path\": \"" << s.current_path << "\", "
                     << "\"video_pts\": " << s.video_pts << ", "
@@ -253,7 +282,8 @@ int main(int argc, char** argv) {
                     << "\"paused\": " << (s.paused ? "true" : "false") << ", "
                     << "\"running\": " << (s.running ? "true" : "false") << ", "
                     << "\"video_pts_since_switch\": " << s.video_pts_since_switch << ", "
-                    << "\"current_duration\": " << s.current_duration << " }";
+                    << "\"current_duration\": " << s.current_duration << ", "
+                    << "\"timestamp\": \"" << ts.str() << "\"  }";
             }
             std::rename(tmpFile.c_str(), statusFile.c_str());
 

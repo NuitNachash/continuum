@@ -74,12 +74,24 @@ void VideoFrameSource::openFile(const std::string& path){
         
     // Read the first packet to capture the original starting PTS
     // Used the preserve timing information when needed
-    av_read_frame(fmt_, pkt_);
+    /*av_read_frame(fmt_, pkt_);
     first_pts_ = pkt_->pts;
-    av_packet_unref(pkt_);
+    av_packet_unref(pkt_);*/
+
+    while (av_read_frame(fmt_, pkt_) >= 0) {
+        if (pkt_->stream_index == video_stream_index_) {
+            first_pts_ = pkt_->pts;
+            av_packet_unref(pkt_);
+            break;
+        }
+        av_packet_unref(pkt_);
+    }
 
     // Return decoder back to the beginning of the file
     av_seek_frame(fmt_, video_stream_index_, 0, AVSEEK_FLAG_BACKWARD);
+
+    
+    
 
     AVStream* stream = fmt_->streams[video_stream_index_];
 
@@ -122,6 +134,14 @@ void VideoFrameSource::openFile(const std::string& path){
 
     if(!sws_)
         throw std::runtime_error("Failed to create sws_context");
+
+       
+    if (scaled_frame_) av_frame_free(&scaled_frame_);
+    scaled_frame_ = av_frame_alloc();
+    scaled_frame_->format = AV_PIX_FMT_YUV420P;
+    scaled_frame_->width = cfg_.width;
+    scaled_frame_->height = cfg_.height;
+    av_frame_get_buffer(scaled_frame_, 32);
 }
 
 // Releases decoder resources for the current file
@@ -132,12 +152,15 @@ void VideoFrameSource::closeFile(){
 
 // Switches playback to another media file
 void VideoFrameSource::switchFile(const std::string& path){
+    flushing_ = true;
     while (!frame_buffer_.empty()){
         av_frame_free(&frame_buffer_.front());
         frame_buffer_.pop();
     }
+    avcodec_flush_buffers(dec_ctx_);
     closeFile();
     openFile(path);
+    flushing_ = false;
 }
 
 // Cleanup all FFmpeg resources
@@ -188,6 +211,11 @@ AVFrame* VideoFrameSource::next() {
         // Retrieve decoded video frame
         ret = avcodec_receive_frame(dec_ctx_, frame_);
         if (ret == 0) {
+            // Guard against possible bad frames, skips corrupted frames
+            if (frame_->width <=0 || frame_->height <= 0 || !frame_->data[0]){
+                continue;
+            }
+
             frame_->pts -= first_pts_;
             // Convert decoded frame to the format expected
             // by the encoder
@@ -203,6 +231,9 @@ AVFrame* VideoFrameSource::next() {
 }
 
 AVFrame* VideoFrameSource::nextBuffered() {
+    if (flushing_)
+        return nullptr;
+    
     while ((int)frame_buffer_.size() < BUFFER_SIZE) {
         AVFrame* f = next();
         if (!f)
@@ -218,4 +249,11 @@ AVFrame* VideoFrameSource::nextBuffered() {
     AVFrame* out = frame_buffer_.front();
     frame_buffer_.pop();
     return out;
+}
+
+void VideoFrameSource::flushBuffer() {
+    while(!frame_buffer_.empty()) {
+        av_frame_free(&frame_buffer_.front());
+        frame_buffer_.pop();
+    }
 }

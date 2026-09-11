@@ -9,6 +9,7 @@ extern "C" {
 }
 
 #include "Config.h"
+#include <mutex>
 
 // Responsible for reading audio from a media file, decoding it,
 // converting it into a format suitable for encoding, and supplying
@@ -46,6 +47,12 @@ public:
     void flushFifo();
 
     int64_t first_audio_pts_ = 0;
+
+    int fifoSize();
+
+    void decodeIntoFifo();
+
+    std::mutex fifo_mutex_;
 
 private:
     // Initializes the decoder 

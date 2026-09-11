@@ -3,6 +3,7 @@
 #include <chrono>
 #include <atomic>
 #include <mutex>
+#include <thread>
 #include "Config.h"
 #include "Encoder.h"
 #include "Streamer.h"
@@ -30,6 +31,8 @@ struct EngineStatus {
 
     // Duration of the currently playing media
     int64_t current_duration;
+
+    std::string timestamp;
 };
 
 /*Controls the complete media streaming pipeline
@@ -76,6 +79,12 @@ public:
     void setOnceMode(bool once) {
         once_mode_ = once;
     }
+
+    void forceClose();
+
+    std::atomic<bool> audioThreadRunning_=false;
+
+    std::thread audioDecodeThread_;
 
 private:
     // Reads, timestamps, encodes, and streams one video frame

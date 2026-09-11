@@ -9,6 +9,7 @@ extern "C" {
 }
 #include "Config.h"
 #include <queue>
+#include <atomic>
 
 /*  Provides decoded video frames from a media file
 
@@ -55,6 +56,10 @@ public:
     }
 
     AVFrame* nextBuffered();
+
+    std::atomic<bool> flushing_ = false;
+
+    void flushBuffer();
 
 private:
     // Converts decoded frames into the required output format

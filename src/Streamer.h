@@ -44,6 +44,8 @@ public:
     // Returns the timestamp scale used for audio packets
     AVRational time_base_audio() const { return audio_stream_->time_base; }
 
+    void forceClose();
+
 private:
     // FFmpeg output context respresenting the RTMP/FLV stream
     AVFormatContext* fmt_ = nullptr;

@@ -3,6 +3,7 @@
 #include <stdexcept>
 #include <cstdint>
 #include <iostream>
+#include <mutex>
 
 extern "C" {
     #include <libavutil/audio_fifo.h>
@@ -175,6 +176,7 @@ bool AudioFrameSource::initAudioFifo() {
 }
 
 bool AudioFrameSource::pushToFifo(AVFrame* frame) {
+    std::lock_guard<std::mutex> lock(fifo_mutex_);
     // Ignore empty frames
     if (!frame || frame->nb_samples <= 0)
                 return false;
@@ -202,8 +204,8 @@ bool AudioFrameSource::pushToFifo(AVFrame* frame) {
     return true;
 }
 
-AVFrame* AudioFrameSource::popFifoFrame1024()
-{
+AVFrame* AudioFrameSource::popFifoFrame1024() {
+    std::lock_guard<std::mutex> lock(fifo_mutex_);
     // AAC encoders expect exactly 1024 samples per frame
     constexpr int AAC_FRAME_SIZE = 1024;
 
@@ -311,6 +313,7 @@ void AudioFrameSource::closeFile() {
 }
 
 void AudioFrameSource::switchFile(const std::string& path) {
+    avcodec_flush_buffers(dec_ctx_);
     // Close the current file and open the new one
     closeFile();
     openFile(path);
@@ -326,8 +329,52 @@ void AudioFrameSource::switchFile(const std::string& path) {
     av_audio_fifo_reset(audio_fifo_);
 }
 
+int AudioFrameSource::fifoSize(){
+    std::lock_guard<std::mutex> lock(fifo_mutex_);
+    return av_audio_fifo_size(audio_fifo_);
+}
+
+void AudioFrameSource::decodeIntoFifo(){
+    if (av_read_frame(fmt_, pkt_) < 0) return;
+
+    if (pkt_->stream_index != audio_stream_index_){
+        av_packet_unref(pkt_);
+        return;
+    }
+
+    if (avcodec_send_packet(dec_ctx_, pkt_) < 0) {
+        av_packet_unref(pkt_);
+        return;
+    }
+
+    av_packet_unref(pkt_);
+
+    if (avcodec_receive_frame(dec_ctx_, decoded_frame_) < 0) return;
+    decoded_frame_->pts -= first_audio_pts_;
+
+    av_frame_unref(converted_frame_);
+    converted_frame_->nb_samples = av_rescale_rnd(
+        swr_get_delay(swr_, dec_ctx_->sample_rate) + decoded_frame_->nb_samples,
+        cfg_.samplerate, dec_ctx_->sample_rate, AV_ROUND_UP
+    );
+    converted_frame_->format = AV_SAMPLE_FMT_FLTP;
+    converted_frame_->ch_layout = out_ch_layout_;
+    converted_frame_->sample_rate = cfg_.samplerate;
+    av_frame_get_buffer(converted_frame_, 0);
+    av_frame_make_writable(converted_frame_);
+
+    int samples = swr_convert(
+        swr_,
+        converted_frame_->data, converted_frame_->nb_samples,
+        (const uint8_t**)decoded_frame_->extended_data, decoded_frame_->nb_samples
+    );
+    if(samples < 0) return;
+    converted_frame_->nb_samples = samples;
+    pushToFifo(converted_frame_);
+}
 // Remove any stale audio to help with audio/video resync on video switch
 void AudioFrameSource::flushFifo() {
+    std::lock_guard<std::mutex> lock(fifo_mutex_);
     av_audio_fifo_reset(audio_fifo_);
 }
 

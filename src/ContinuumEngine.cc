@@ -20,8 +20,8 @@ ContinuumEngine::ContinuumEngine(const config& cfg)
 
 // Adds multiple media files to the playback playlist
 void ContinuumEngine::loadPlaylist(const std::vector<std::string>& paths) {
-    for (const auto& p : paths)
-        playlist_.add(p);
+    for (size_t i = 1; i < paths.size(); i++)
+        playlist_.add(paths[i]);
 }
 
 // Adds a single media file to the end of the playlist
@@ -31,6 +31,17 @@ void ContinuumEngine::addMedia(const std::string& path) {
 
 // Reads, timestamps, encodes, and streams one video frame
 bool ContinuumEngine::sendOneVideoFrame() {
+
+    while (running_) {
+        int cmp = timeline_.compare(encoder_.video_time_base(), encoder_.audio_time_base());
+        if (cmp <= 0) break;
+
+        int64_t video_us = av_rescale_q(timeline_.getPts(true), encoder_.video_time_base(), {1, 1000000});
+        int64_t audio_us = av_rescale_q(timeline_.getPts(false), encoder_.audio_time_base(), {1, 1000000});
+        if (video_us - audio_us > 500000) break;
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
     AVFrame* frame = source_.nextBuffered();
 
     // End of current media file
@@ -140,6 +151,15 @@ void ContinuumEngine::start() {
     stream_start_ = std::chrono::steady_clock::now();
     std::cout << "[Engine] streaming - Ctrl+C to stop\n";
 
+    audioThreadRunning_=true;
+    std::thread audioDecodeThread([&]() {
+        while (audioThreadRunning_) {
+            if (audioSource_.fifoSize() < 8192)
+                audioSource_.decodeIntoFifo();
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+    });
+
     while (running_) {
         // Pause playback while keeping the thread alive
         if (paused_) {
@@ -183,6 +203,8 @@ void ContinuumEngine::start() {
           }
         }
     }
+    audioThreadRunning_ = false;
+    audioDecodeThread.join();
 }
 
 // Stops the streaming loop
@@ -205,24 +227,74 @@ void ContinuumEngine::skip() {
     skip_requested_ = true;
 }
 
+void ContinuumEngine::forceClose(){
+    streamer_.forceClose();
+}
+
 // Performs a better switch that carries updated media information
 void ContinuumEngine::performSwitch(const std::string& nextPath) {
-    {
-        std::lock_guard<std::mutex> lock(path_mutex_);
-        current_path_ = nextPath;
+    std::cout << "[Engine] performSwitch start: " << nextPath << "\n";
+    audioThreadRunning_ = false;
+    
+    try{
+
+        if (audioDecodeThread_.joinable()){
+            std::cout << "[Engine] joining audioDecodeThread\n";
+            audioDecodeThread_.join();
+        }
+        std::cout << "[Engine] flushing fifo and buffer\n";
+        audioSource_.flushFifo();
+        source_.flushBuffer();
+
+        {
+            std::lock_guard<std::mutex> lock(path_mutex_);
+            current_path_ = nextPath;
+        }
+        std::cout << "[Engine] switching video source\n";
+        video_pts_at_switch = timeline_.getPts(true);
+        source_.switchFile(nextPath);       // flushes frame buffer
+        std::cout << "[Engine] switch audio source\n";
+        audioSource_.switchFile(nextPath);  // resets audio decoder
+        std::cout << "[Engine] performSwitch complete\n";
+        
+        // Snap video PTS to match audio (audio is master clock)
+        int64_t audio_pts = timeline_.getPts(false);
+        int64_t video_pts_synced = av_rescale_q(
+            audio_pts,
+            encoder_.audio_time_base(),
+            encoder_.video_time_base()
+        );
+        timeline_.setVideoPts(video_pts_synced);
+
+        audioThreadRunning_ = true;
+        audioDecodeThread_ = std::thread([this]() {
+            while (audioThreadRunning_) { 
+                if (audioSource_.fifoSize() < 8192){
+                    audioSource_.decodeIntoFifo();
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+        });
+    } catch (const std::exception& e) {
+        std::cout << "[Engine] Skipping bad file: " << nextPath << "\n";
+
+        audioThreadRunning_ = true;
+        audioDecodeThread_ = std::thread([this]() {
+            while(audioThreadRunning_) {
+                if (audioSource_.fifoSize() < 8192){
+                    audioSource_.decodeIntoFifo();
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+        });
+        std::string next = playlist_.getNext();
+        if (!next.empty()){
+            performSwitch(next);
+        } else {
+            performSwitch(current_path_);
+        }
     }
-    video_pts_at_switch = timeline_.getPts(true);
-    source_.switchFile(nextPath);
-    audioSource_.switchFile(nextPath);
-    // Protection against audio/video desync on video switch by matching audio with video
-    int64_t audio_pts = timeline_.getPts(true);
-    int64_t video_pts_synced = av_rescale_q(
-        audio_pts,
-        encoder_.audio_time_base(),
-        encoder_.video_time_base()
-    );
-    audioSource_.flushFifo();
-    timeline_.setVideoPts(video_pts_synced);
+    audioThreadRunning_ = true;
 }
 
 // Returns current engine state for monitoring/control

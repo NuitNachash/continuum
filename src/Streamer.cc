@@ -107,6 +107,13 @@ void streamLog(const std::string& msg) {
     }
 }
 
+void Streamer::forceClose(){
+    if (fmt_->pb)
+        avio_closep(&fmt_->pb);
+    avformat_free_context(fmt_);
+    fmt_=nullptr;
+}
+
 // Track the last time each stream type was written
 // Used temporarily to debug delays in packet delivery
 static auto last_video_write = std::chrono::steady_clock::now();
