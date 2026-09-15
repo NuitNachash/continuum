@@ -15,6 +15,7 @@ extern "C" {
     #include <libswresample/swresample.h>
 }
 
+
 AudioFrameSource::AudioFrameSource(const config& cfg, AVRational tb) : cfg_(cfg), audio_time_base_(tb) {
     // Allocate reusable packet and frame objects that will be used throughout
     // decoding. Reusing them avoids constant allocations.
@@ -316,6 +317,8 @@ void AudioFrameSource::switchFile(const std::string& path) {
     avcodec_flush_buffers(dec_ctx_);
     // Close the current file and open the new one
     closeFile();
+    total_samples_in_ = 0;
+    total_samples_out_ = 0;
     openFile(path);
 
     // The decoder properties may have changed, so recreate the resampler
@@ -327,6 +330,8 @@ void AudioFrameSource::switchFile(const std::string& path) {
 
     // Discard any buffered audio from the previous file
     av_audio_fifo_reset(audio_fifo_);
+
+    
 }
 
 int AudioFrameSource::fifoSize(){
@@ -353,10 +358,12 @@ void AudioFrameSource::decodeIntoFifo(){
     decoded_frame_->pts -= first_audio_pts_;
 
     av_frame_unref(converted_frame_);
-    converted_frame_->nb_samples = av_rescale_rnd(
-        swr_get_delay(swr_, dec_ctx_->sample_rate) + decoded_frame_->nb_samples,
-        cfg_.samplerate, dec_ctx_->sample_rate, AV_ROUND_UP
-    );
+
+    total_samples_in_ += decoded_frame_->nb_samples;
+    int64_t expected_out = av_rescale(total_samples_in_, cfg_.samplerate, dec_ctx_->sample_rate);
+    int64_t nb_samples = expected_out - total_samples_out_;
+    converted_frame_->nb_samples = (int)(nb_samples + swr_get_delay(swr_, dec_ctx_->sample_rate));
+
     converted_frame_->format = AV_SAMPLE_FMT_FLTP;
     converted_frame_->ch_layout = out_ch_layout_;
     converted_frame_->sample_rate = cfg_.samplerate;
@@ -368,7 +375,9 @@ void AudioFrameSource::decodeIntoFifo(){
         converted_frame_->data, converted_frame_->nb_samples,
         (const uint8_t**)decoded_frame_->extended_data, decoded_frame_->nb_samples
     );
+
     if(samples < 0) return;
+    total_samples_out_ += samples;
     converted_frame_->nb_samples = samples;
     pushToFifo(converted_frame_);
 }

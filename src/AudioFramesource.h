@@ -54,6 +54,9 @@ public:
 
     std::mutex fifo_mutex_;
 
+    int64_t total_samples_in_ = 0;
+    int64_t total_samples_out_ = 0;
+
 private:
     // Initializes the decoder 
     void initDecoder();
