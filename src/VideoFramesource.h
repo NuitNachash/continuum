@@ -61,6 +61,8 @@ public:
 
     void flushBuffer();
 
+    AVRational src_time_base_;
+
 private:
     // Converts decoded frames into the required output format
     // Handles resolution changes and pixel foramt conversion

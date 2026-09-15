@@ -95,6 +95,9 @@ void VideoFrameSource::openFile(const std::string& path){
 
     AVStream* stream = fmt_->streams[video_stream_index_];
 
+    // Store video timebase
+    src_time_base_ = fmt_->streams[video_stream_index_]->time_base;
+
     // Find the decoder matching the input codec
     const AVCodec* codec = avcodec_find_decoder(stream->codecpar->codec_id);
     if (!codec)
@@ -216,7 +219,12 @@ AVFrame* VideoFrameSource::next() {
                 continue;
             }
 
-            frame_->pts -= first_pts_;
+            // Covert timebase to more universal 1/1000000
+            frame_->pts = av_rescale_q(
+                frame_->pts - first_pts_,
+                src_time_base_,
+                {1, 1000000}
+            );
             // Convert decoded frame to the format expected
             // by the encoder
             sws_scale(

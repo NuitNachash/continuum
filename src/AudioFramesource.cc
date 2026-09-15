@@ -103,22 +103,21 @@ AVFrame* AudioFrameSource::next() {
         if (ret < 0)
             continue;
         
-        decoded_frame_->pts -= first_audio_pts_;
+        decoded_frame_->pts = av_rescale_q(
+            decoded_frame_->pts - first_audio_pts_,
+            src_time_base_,
+            {1, 1000000}
+        );
 
         const uint8_t * const *in_data = (const uint8_t * const *)decoded_frame_->extended_data;
 
         // Reuse the conversion frame by clearing previous contents
         av_frame_unref(converted_frame_);
 
-        // Compute how many output samples are needed after resampling
-        // swr_get_delay() accounts for samples currently buffered internally
-        // by the resampler
-        converted_frame_->nb_samples = av_rescale_rnd(
-            swr_get_delay(swr_, dec_ctx_->sample_rate) + decoded_frame_->nb_samples,
-            cfg_.samplerate,
-            dec_ctx_->sample_rate,
-            AV_ROUND_UP
-        );
+        total_samples_in_ += decoded_frame_->nb_samples;
+        int64_t expected_out = av_rescale(total_samples_in_, cfg_.samplerate, dec_ctx_->sample_rate);
+        int64_t nb_samples = expected_out - total_samples_out_;
+        converted_frame_->nb_samples = (int)(nb_samples + swr_get_delay(swr_, dec_ctx_->sample_rate));
         
         // Describe the desired output frame format
         converted_frame_->format = AV_SAMPLE_FMT_FLTP;
@@ -141,6 +140,7 @@ AVFrame* AudioFrameSource::next() {
         );
         if (samples < 0)
             continue;
+        total_samples_out_ += samples;
 
         // Store the actual number of samples produced
         converted_frame_->nb_samples = samples;
@@ -271,6 +271,9 @@ void AudioFrameSource::openFile(const std::string& path){
     av_seek_frame(fmt_, audio_stream_index_, 0, AVSEEK_FLAG_BACKWARD);
     
     AVStream* stream = fmt_->streams[audio_stream_index_];
+
+    // Store audio timebase
+    src_time_base_ = fmt_->streams[audio_stream_index_]->time_base;
 
     // Locate a decoder capable of decoding this codec
     const AVCodec* codec = avcodec_find_decoder(stream->codecpar->codec_id);

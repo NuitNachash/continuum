@@ -57,6 +57,8 @@ public:
     int64_t total_samples_in_ = 0;
     int64_t total_samples_out_ = 0;
 
+    AVRational src_time_base_;
+
 private:
     // Initializes the decoder 
     void initDecoder();
