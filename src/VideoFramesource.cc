@@ -195,6 +195,23 @@ AVFrame* VideoFrameSource::next() {
 
         // End of file
         if (ret < 0) {
+            // Flush decoder
+            avcodec_send_packet(dec_ctx_, nullptr);
+            // Drain remaining frames
+            while (avcodec_receive_frame(dec_ctx_, frame_) == 0) {
+                // still got buffered frames, return them
+                if (frame_->width > 0 && frame_->height > 0 && frame_->data[0]) {
+                    frame_->pts = av_rescale_q(
+                        frame_->pts - first_pts_,
+                        src_time_base_,
+                        {1, 1000000}
+                    );
+                    sws_scale(sws_, frame_->data, frame_->linesize,
+                            0, dec_ctx_->height,
+                            scaled_frame_->data, scaled_frame_->linesize);
+                    return scaled_frame_;
+                }
+            }
             return nullptr;
         }
 
