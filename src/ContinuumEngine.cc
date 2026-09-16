@@ -1,4 +1,5 @@
 #include "ContinuumEngine.h"
+#include "logger.h"
 #include <thread>
 #include <iostream>
 #include <mutex>
@@ -149,7 +150,7 @@ void ContinuumEngine::start() {
     running_ = true;
     int64_t frame_count = 0;
     stream_start_ = std::chrono::steady_clock::now();
-    std::cout << "[Engine] streaming - Ctrl+C to stop\n";
+    LOG_INFO("[Engine] streaming - Ctrl+C to stop");
 
     audioThreadRunning_=true;
     std::thread audioDecodeThread([&]() {
@@ -196,10 +197,14 @@ void ContinuumEngine::start() {
           int64_t video_us = av_rescale_q(timeline_.getPts(true), encoder_.video_time_base(), {1, 1000000});
           int64_t audio_us = av_rescale_q(timeline_.getPts(false), encoder_.audio_time_base(), {1, 1000000});
           int64_t drift_us = video_us - audio_us;
+          LOG_DEBUG("[Drift] video_us: " + std::to_string(video_us) + "us");
+          LOG_DEBUG("[Drift] audio_us: " + std::to_string(audio_us) + "us");
+          LOG_DEBUG("[Drift] Drift: " + std::to_string(drift_us) + "us");
 
           if (std::abs(drift_us) > 3000) {
             int64_t correction = av_rescale_q(drift_us, {1, 1000000}, encoder_.video_time_base());
             timeline_.nudgeAudioPts(correction / 15);
+
           }
         }
     }
@@ -233,16 +238,16 @@ void ContinuumEngine::forceClose(){
 
 // Performs a better switch that carries updated media information
 void ContinuumEngine::performSwitch(const std::string& nextPath) {
-    std::cout << "[Engine] performSwitch start: " << nextPath << "\n";
+    LOG_INFO("[Engine] performSwitch start: " + nextPath);
     audioThreadRunning_ = false;
     
     try{
 
         if (audioDecodeThread_.joinable()){
-            std::cout << "[Engine] joining audioDecodeThread\n";
+            LOG_INFO("[Engine] joining audioDecodeThread");
             audioDecodeThread_.join();
         }
-        std::cout << "[Engine] flushing fifo and buffer\n";
+        LOG_INFO("[Engine] flushing fifo and buffer");
         audioSource_.flushFifo();
         source_.flushBuffer();
 
@@ -250,12 +255,12 @@ void ContinuumEngine::performSwitch(const std::string& nextPath) {
             std::lock_guard<std::mutex> lock(path_mutex_);
             current_path_ = nextPath;
         }
-        std::cout << "[Engine] switching video source\n";
+        LOG_INFO("[Engine] switching video source");
         video_pts_at_switch = timeline_.getPts(true);
         source_.switchFile(nextPath);       // flushes frame buffer
-        std::cout << "[Engine] switch audio source\n";
+        LOG_INFO("[Engine] switch audio source");
         audioSource_.switchFile(nextPath);  // resets audio decoder
-        std::cout << "[Engine] performSwitch complete\n";
+        LOG_INFO("[Engine] performSwitch complete");
         
         // Snap video PTS to match audio (audio is master clock)
         int64_t audio_pts = timeline_.getPts(false);
@@ -276,7 +281,7 @@ void ContinuumEngine::performSwitch(const std::string& nextPath) {
             }
         });
     } catch (const std::exception& e) {
-        std::cout << "[Engine] Skipping bad file: " << nextPath << "\n";
+        LOG_INFO("[Engine] Skipping bad file: " + nextPath);
 
         audioThreadRunning_ = true;
         audioDecodeThread_ = std::thread([this]() {

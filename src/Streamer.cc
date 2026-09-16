@@ -1,4 +1,5 @@
 #include "Streamer.h"
+#include "logger.h"
 #include <iostream>
 #include <stdexcept>
 #include <chrono>
@@ -67,7 +68,7 @@ Streamer::Streamer(const config& cfg, const Encoder& encoder) {
     if (ret < 0)
         throw std::runtime_error("write_header failed");
 
-    std::cout << "[Streamer] RTMP connected\n";
+    LOG_INFO("[Streamer] RTMP connected");
 }
 
 // Cleans up the RTMP output connection
@@ -141,7 +142,7 @@ int Streamer::write(AVPacket* pkt) {
     if (ret < 0) {
         char err[256];
         av_strerror(ret, err, sizeof(err));
-        streamLog(std::string("[Streamer] write error: ") + err);
+        LOG_ERROR("[Streamer] write error: " + std::string(err));
     }
     return ret;
 }

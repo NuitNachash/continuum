@@ -1,4 +1,5 @@
 #include "Encoder.h"
+#include "logger.h"
 extern "C" {
     #include <libswresample/swresample.h>
 }
@@ -59,11 +60,11 @@ Encoder::Encoder(const config& cfg) {
         throw std::runtime_error(std::string("Video avcodec_open2 failed: ") + err);
     }
 
-    std::cout << "[Encoder] opened video at H.264 "
-              << video_ctx_->width << "x" << video_ctx_->height
-              << " @ " << cfg.fps << "fps"
-              << "  time_base=" << video_ctx_->time_base.num << "/" << video_ctx_->time_base.den
-              << '\n';
+    LOG_INFO("[Encoder] opened video at H.264 "
+              + std::to_string(video_ctx_->width) + "x" + std::to_string(video_ctx_->height)
+              + " @ " + std::to_string(cfg.fps) + "fps"
+              + "  time_base=" + std::to_string(video_ctx_->time_base.num) + "/" + std::to_string(video_ctx_->time_base.den)
+            );
 
     // Find AAC audio encoder
     const AVCodec* audio_codec = avcodec_find_encoder(AV_CODEC_ID_AAC);
@@ -100,12 +101,12 @@ Encoder::Encoder(const config& cfg) {
         throw std::runtime_error(std::string("Audio avcodec_open2 failed: ") + err);
     }
 
-    std::cout << "[Encoder] opened audio AAC "
-          << audio_ctx_->sample_rate << " Hz"
-          << " channels=stereo"
-          << " time_base=" << audio_ctx_->time_base.num << "/" << audio_ctx_->time_base.den
-          << '\n';
-
+    LOG_INFO("[Encoder] opened audio AAC "
+          + std::to_string(audio_ctx_->sample_rate) + " Hz"
+          + " channels=stereo"
+          + " time_base=" + std::to_string(audio_ctx_->time_base.num) + "/" 
+          + std::to_string(audio_ctx_->time_base.den)
+        );
 }
 
 // Releases encoder contexts and their allocated resources

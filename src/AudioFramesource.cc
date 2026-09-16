@@ -1,4 +1,5 @@
 #include "AudioFramesource.h"
+#include "logger.h"
 #include <cstring>
 #include <stdexcept>
 #include <cstdint>
@@ -32,7 +33,7 @@ AudioFrameSource::AudioFrameSource(const config& cfg, AVRational tb) : cfg_(cfg)
     // Open the audio file and initialize the decoder.
     openFile(cfg.mp4Path);
 
-    std::cout << "[AudioFrameSource] Audio stream loaded\n";
+    LOG_INFO("[AudioFrameSource] Audio stream loaded");
 
     // Configure the resampler so the decoded audio matches the encoder's
     // required format (sample rate, layout, sample format).

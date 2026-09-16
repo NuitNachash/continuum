@@ -11,6 +11,7 @@
 #include <csignal>
 #include "Config.h"
 #include "ContinuumEngine.h"
+#include "logger.h"
 
 // Returns the default application configuration directory
 // Uses XDG_CONFIG_HOME when available, otherwise falls back to ~/.config
@@ -95,7 +96,7 @@ int main(int argc, char** argv) {
     av_log_set_level(AV_LOG_ERROR);
 
     // Open persistent application log
-    logFile.open(getDefaultConfigDir() + "continuum.log", std::ios::app);
+    Logger::instance().init("continuum.log");
 
     // Default file locations
     std::string configPath = getDefaultConfigDir() + "config.ini";
@@ -134,7 +135,7 @@ int main(int argc, char** argv) {
             return 0;
         }
         else {
-        log(std::string("Unknown argument: ") + arg); 
+        LOG_WARN("Unknown argument: " + arg); 
         printUsage();
         return 1;
         }
@@ -147,12 +148,12 @@ int main(int argc, char** argv) {
 
     // Validate required arguments
     if (onceMode && mediaPath.empty()) {
-        log("Error: --once requires --media <path>");
+        LOG_ERROR("Error: --once requires --media <path>");
         return 1;
     }
 
     if (playlistPath.empty() && mediaPath.empty()){
-        log("Error: Provide --playlist or --media");
+        LOG_ERROR("Error: Provide --playlist or --media");
         printUsage();
         return 1;
     }
@@ -173,7 +174,7 @@ int main(int argc, char** argv) {
             paths = loadPlaylistFile(playlistPath);
         }
         if (paths.empty()) {
-            log("Error: Playlist is empty");
+            LOG_ERROR("Error: Playlist is empty");
             return 1;
         }
         // First media file is required to initialize the sources
@@ -229,7 +230,7 @@ int main(int argc, char** argv) {
                 std::string newPath;
                 if(std::getline(f, newPath) && !newPath.empty()) {
                     engine.addMedia(newPath);
-                    log(std::string("Added to playlist: ") + newPath);
+                    LOG_INFO("Added to playlist: " + newPath);
                     std::remove(addFile.c_str());
                 }
             }
@@ -242,23 +243,23 @@ int main(int argc, char** argv) {
                 if (std::getline(f, cmd) && !cmd.empty()) {
                     if (cmd == "PAUSE") {
                         engine.pause();
-                        log("[PAUSE] Video is paused, use resume command to resume video");
+                        LOG_INFO("[PAUSE] Video is paused, use resume command to resume video");
                     }
                     else if (cmd == "RESUME") {
                         engine.resume();
-                        log("[RESUME] Video has been resumed.");
+                        LOG_INFO("[RESUME] Video has been resumed.");
                     }
                     else if (cmd == "SKIP") {
                         engine.skip();
-                        log("[SKIP] Skipping to next video in playlist.");
+                        LOG_INFO("[SKIP] Skipping to next video in playlist.");
                     }
                     else if (cmd == "STOP") {
                         engine.stop();
                         engine.forceClose();
-                        log("[STOP] Stream is stopped and will exit.");
+                        LOG_INFO("[STOP] Stream is stopped and will exit.");
                         stopped = true;
                     }
-                    else log(std::string("[Control] Unknown command: ") + cmd);
+                    else LOG_WARN("[Control] Unknown command: " + cmd);
                     std::remove(controlFile.c_str());
                 }
             }
@@ -298,7 +299,7 @@ int main(int argc, char** argv) {
         engineThread.join();
     }
     catch (const std::exception& e) {
-        log(std::string("[Fatal] ") + e.what());
+        LOG_ERROR("[Fatal] " + std::string(e.what()));
         return 1;
     }
     return 0;

@@ -1,5 +1,5 @@
 #include "VideoFramesource.h"
-
+#include "logger.h"
 #include <cstring>
 #include <stdexcept>
 #include <iostream>
@@ -32,7 +32,7 @@ VideoFrameSource::VideoFrameSource(const config& cfg) : cfg_(cfg) {
     // Open the first media file and initialize decoder
     openFile(cfg.mp4Path);
 
-    std::cout << "[FrameSource] MP4 loaded: " << cfg.mp4Path << '\n';
+    LOG_INFO("[FrameSource] MP4 loaded: " + cfg.mp4Path);
 
     // Allocate the output frame used after scaling/conversion
     // The encoder expects YUV420P frames at the configured
