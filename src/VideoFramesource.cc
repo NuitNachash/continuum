@@ -78,14 +78,16 @@ void VideoFrameSource::openFile(const std::string& path){
     first_pts_ = pkt_->pts;
     av_packet_unref(pkt_);*/
 
-    while (av_read_frame(fmt_, pkt_) >= 0) {
+    /*while (av_read_frame(fmt_, pkt_) >= 0) {
         if (pkt_->stream_index == video_stream_index_) {
             first_pts_ = pkt_->pts;
             av_packet_unref(pkt_);
             break;
         }
         av_packet_unref(pkt_);
-    }
+    }*/
+
+    first_pts_ = fmt_->streams[video_stream_index_]->start_time;
 
     // Return decoder back to the beginning of the file
     av_seek_frame(fmt_, video_stream_index_, 0, AVSEEK_FLAG_BACKWARD);

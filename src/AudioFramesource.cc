@@ -298,14 +298,15 @@ void AudioFrameSource::openFile(const std::string& path){
 	
     // Read and record the first audio packet's PTS, then seek back
     AVPacket* tmp = av_packet_alloc();
-    while(av_read_frame(fmt_, tmp) >= 0) {
+    /*while(av_read_frame(fmt_, tmp) >= 0) {
         if (tmp->stream_index == audio_stream_index_) {
             first_audio_pts_ = tmp->pts;
             av_packet_unref(tmp);
             break;
         }
         av_packet_unref(tmp);
-    }
+    }*/
+    first_audio_pts_ = fmt_->streams[audio_stream_index_]->start_time;
     av_packet_free(&tmp);
     av_seek_frame(fmt_, audio_stream_index_, 0, AVSEEK_FLAG_BACKWARD);
 
