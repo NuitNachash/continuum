@@ -249,8 +249,8 @@ void ContinuumEngine::performSwitch(const std::string& nextPath) {
         }
 
         LOG_INFO("[Engine] flushing fifo and buffer");
-        audioSource_.flushFifo();
-        source_.flushBuffer();
+        //audioSource_.flushFifo();
+       // source_.flushBuffer();
 
         {
             std::lock_guard<std::mutex> lock(path_mutex_);
@@ -259,10 +259,11 @@ void ContinuumEngine::performSwitch(const std::string& nextPath) {
 
         LOG_INFO("[Engine] switching video source");
         video_pts_at_switch = timeline_.getPts(true);
-        source_.switchFile(nextPath);
+        //source_.switchFile(nextPath);
 
         LOG_INFO("[Engine] switching audio source");
         int64_t audio_pts_at_switch = timeline_.getPts(false);
+        // audioSource_.switchFile(nextPath);
         
         LOG_INFO(
             "[Engine] timeline before switch - video: " +
