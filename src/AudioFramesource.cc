@@ -103,12 +103,26 @@ AVFrame* AudioFrameSource::next() {
         int ret = avcodec_receive_frame(dec_ctx_, decoded_frame_);
         if (ret < 0)
             continue;
-        
-        decoded_frame_->pts = av_rescale_q(
+		int64_t source_pts = decoded_frame_->best_effort_timestamp;
+
+		if (source_pts == AV_NOPTS_VALUE){
+			source_pts = decoded_frame_->pts;
+		}
+		if (source_pts == AV_NOPTS_VALUE){
+			LOG_WARN("[AudioFramesource] audio frame has no valid PTS, skipping");
+			continue
+		}
+		if (first_audio_pts_ == AV_NOPTS_VALUE){
+			first_audio_pts_ = source_pts;
+			LOG_DEBUG("[AudioFramesource] first decoded audio PTS: " + std::to_string(first_audio_pts_));
+		}
+		decoded_frame_->pts = source_pts;
+
+        /*decoded_frame_->pts = av_rescale_q(
             decoded_frame_->pts - first_audio_pts_,
             src_time_base_,
             {1, 1000000}
-        );
+        );*/
 
         const uint8_t * const *in_data = (const uint8_t * const *)decoded_frame_->extended_data;
 
