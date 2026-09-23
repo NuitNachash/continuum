@@ -262,16 +262,28 @@ void ContinuumEngine::performSwitch(const std::string& nextPath) {
         source_.switchFile(nextPath);
 
         LOG_INFO("[Engine] switching audio source");
-        audioSource_.switchFile(nextPath);
+        int64_t audio_pts_at_switch = timeline_.getPts(false);
+        
+        LOG_INFO(
+            "[Engine] timeline before switch - video: " +
+            std::to_string(video_pts_at_switch) +
+            " audio: " +
+            std::to_string(audio_pts_at_switch)
+        );
 
+        audioSource_.flushFifo();
+        source_.flushBuffer();
+      
+        source_.switchFile(nextPath);
+        audioSource_.switchFile(nextPath);
         // Calculate start offset between video and audio streams
-        int64_t video_start_us = av_rescale_q(source_.firstPts(), source_.srcTimeBase(), {1, 1000000});
-        int64_t audio_start_us = av_rescale_q(audioSource_.firstAudioPts(), audioSource_.srcTimeBase(), {1, 1000000});
-        int64_t start_offset_us = video_start_us - audio_start_us;
+        // int64_t video_start_us = av_rescale_q(source_.firstPts(), source_.srcTimeBase(), {1, 1000000});
+        // int64_t audio_start_us = av_rescale_q(audioSource_.firstAudioPts(), audioSource_.srcTimeBase(), {1, 1000000});
+        // int64_t start_offset_us = video_start_us - audio_start_us;
 
         // Snap video PTS to audio master clock with start offset correction
-        int64_t audio_pts = timeline_.getPts(false);
-        int64_t video_pts_synced = av_rescale_q(
+        // int64_t audio_pts = timeline_.getPts(false);
+        /* int64_t video_pts_synced = av_rescale_q(
             audio_pts,
             encoder_.audio_time_base(),
             encoder_.video_time_base()
@@ -283,7 +295,7 @@ void ContinuumEngine::performSwitch(const std::string& nextPath) {
             video_pts_synced -= correction;
         }
 
-        timeline_.setVideoPts(video_pts_synced);
+        timeline_.setVideoPts(video_pts_synced);*/
 
         LOG_INFO("[Engine] performSwitch complete: " + nextPath);
 
