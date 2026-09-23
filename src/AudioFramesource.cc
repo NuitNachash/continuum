@@ -275,6 +275,7 @@ void AudioFrameSource::openFile(const std::string& path){
 
     // Store audio timebase
     src_time_base_ = fmt_->streams[audio_stream_index_]->time_base;
+    
 
     // Locate a decoder capable of decoding this codec
     const AVCodec* codec = avcodec_find_decoder(stream->codecpar->codec_id);
@@ -306,9 +307,17 @@ void AudioFrameSource::openFile(const std::string& path){
         }
         av_packet_unref(tmp);
     }*/
-    first_audio_pts_ = fmt_->streams[audio_stream_index_]->start_time;
+
+    while(av_read_frame(fmt_, tmp) >= 0) {
+        if (tmp->stream_index == audio_stream_index_) {
+            first_audio_pts_ = tmp->pts;
+            av_packet_unref(tmp);
+            break;
+        }
+        av_packet_unref(tmp);
+    }
     av_packet_free(&tmp);
-    av_seek_frame(fmt_, audio_stream_index_, 0, AVSEEK_FLAG_BACKWARD);
+    av_seek_frame(fmt_, audio_stream_index_, first_audio_pts_, AVSEEK_FLAG_BACKWARD);
 
 }
 
@@ -360,7 +369,11 @@ void AudioFrameSource::decodeIntoFifo(){
     av_packet_unref(pkt_);
 
     if (avcodec_receive_frame(dec_ctx_, decoded_frame_) < 0) return;
-    decoded_frame_->pts -= first_audio_pts_;
+    decoded_frame_->pts = av_rescale_q(
+        decoded_frame_->pts - first_audio_pts_,
+        src_time_base_,
+        {1, 1000000}
+    );
 
     av_frame_unref(converted_frame_);
 

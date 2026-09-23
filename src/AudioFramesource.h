@@ -59,6 +59,9 @@ public:
 
     AVRational src_time_base_;
 
+    int64_t firstAudioPts() const { return first_audio_pts_; }
+    AVRational srcTimeBase() const { return src_time_base_; }
+
 private:
     // Initializes the decoder 
     void initDecoder();

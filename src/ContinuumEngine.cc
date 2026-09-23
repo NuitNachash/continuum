@@ -32,6 +32,7 @@ void ContinuumEngine::addMedia(const std::string& path) {
 
 // Reads, timestamps, encodes, and streams one video frame
 bool ContinuumEngine::sendOneVideoFrame() {
+    LOG_DEBUG("[Engine] sendOneVideoFrame called");
 
     while (running_) {
         int cmp = timeline_.compare(encoder_.video_time_base(), encoder_.audio_time_base());
@@ -241,12 +242,12 @@ void ContinuumEngine::performSwitch(const std::string& nextPath) {
     LOG_INFO("[Engine] performSwitch start: " + nextPath);
     audioThreadRunning_ = false;
     
-    try{
-
-        if (audioDecodeThread_.joinable()){
+    try {
+        if (audioDecodeThread_.joinable()) {
             LOG_INFO("[Engine] joining audioDecodeThread");
             audioDecodeThread_.join();
         }
+
         LOG_INFO("[Engine] flushing fifo and buffer");
         audioSource_.flushFifo();
         source_.flushBuffer();
@@ -255,50 +256,68 @@ void ContinuumEngine::performSwitch(const std::string& nextPath) {
             std::lock_guard<std::mutex> lock(path_mutex_);
             current_path_ = nextPath;
         }
+
         LOG_INFO("[Engine] switching video source");
         video_pts_at_switch = timeline_.getPts(true);
-        source_.switchFile(nextPath);       // flushes frame buffer
-        LOG_INFO("[Engine] switch audio source");
-        audioSource_.switchFile(nextPath);  // resets audio decoder
-        LOG_INFO("[Engine] performSwitch complete");
-        
-        // Snap video PTS to match audio (audio is master clock)
+        source_.switchFile(nextPath);
+
+        LOG_INFO("[Engine] switching audio source");
+        audioSource_.switchFile(nextPath);
+
+        // Calculate start offset between video and audio streams
+        int64_t video_start_us = av_rescale_q(source_.firstPts(), source_.srcTimeBase(), {1, 1000000});
+        int64_t audio_start_us = av_rescale_q(audioSource_.firstAudioPts(), audioSource_.srcTimeBase(), {1, 1000000});
+        int64_t start_offset_us = video_start_us - audio_start_us;
+
+        // Snap video PTS to audio master clock with start offset correction
         int64_t audio_pts = timeline_.getPts(false);
         int64_t video_pts_synced = av_rescale_q(
             audio_pts,
             encoder_.audio_time_base(),
             encoder_.video_time_base()
         );
+
+        if (std::abs(start_offset_us) > 1000) {
+            LOG_DEBUG("[Engine] start offset correction: " + std::to_string(start_offset_us) + "us");
+            int64_t correction = av_rescale_q(start_offset_us, {1, 1000000}, encoder_.video_time_base());
+            video_pts_synced -= correction;
+        }
+
         timeline_.setVideoPts(video_pts_synced);
 
-        audioThreadRunning_ = true;
-        audioDecodeThread_ = std::thread([this]() {
-            while (audioThreadRunning_) { 
-                if (audioSource_.fifoSize() < 8192){
-                    audioSource_.decodeIntoFifo();
-                }
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
-            }
-        });
-    } catch (const std::exception& e) {
-        LOG_INFO("[Engine] Skipping bad file: " + nextPath);
+        LOG_INFO("[Engine] performSwitch complete: " + nextPath);
 
         audioThreadRunning_ = true;
         audioDecodeThread_ = std::thread([this]() {
-            while(audioThreadRunning_) {
-                if (audioSource_.fifoSize() < 8192){
+            while (audioThreadRunning_) {
+                if (audioSource_.fifoSize() < 8192) {
                     audioSource_.decodeIntoFifo();
                 }
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
             }
         });
+
+    } catch (const std::exception& e) {
+        LOG_ERROR("[Engine] Switch failed: " + std::string(e.what()) + " file: " + nextPath);
+
+        audioThreadRunning_ = true;
+        audioDecodeThread_ = std::thread([this]() {
+            while (audioThreadRunning_) {
+                if (audioSource_.fifoSize() < 8192) {
+                    audioSource_.decodeIntoFifo();
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+        });
+
         std::string next = playlist_.getNext();
-        if (!next.empty()){
+        if (!next.empty()) {
             performSwitch(next);
         } else {
             performSwitch(current_path_);
         }
     }
+
     audioThreadRunning_ = true;
 }
 

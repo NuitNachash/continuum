@@ -62,6 +62,8 @@ public:
     void flushBuffer();
 
     AVRational src_time_base_;
+    int64_t firstPts() const { return first_pts_; }
+    AVRational srcTimeBase() const { return src_time_base_; }
 
 private:
     // Converts decoded frames into the required output format
