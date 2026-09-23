@@ -103,7 +103,7 @@ AVFrame* AudioFrameSource::next() {
         int ret = avcodec_receive_frame(dec_ctx_, decoded_frame_);
         if (ret < 0)
             continue;
-		int64_t source_pts = decoded_frame_->best_effort_timestamp;
+		/*int64_t source_pts = decoded_frame_->best_effort_timestamp;
 
 		if (source_pts == AV_NOPTS_VALUE){
 			source_pts = decoded_frame_->pts;
@@ -116,7 +116,7 @@ AVFrame* AudioFrameSource::next() {
 			first_audio_pts_ = source_pts;
 			LOG_DEBUG("[AudioFramesource] first decoded audio PTS: " + std::to_string(first_audio_pts_));
 		}
-		decoded_frame_->pts = source_pts;
+		decoded_frame_->pts = source_pts;*/
 
         /*decoded_frame_->pts = av_rescale_q(
             decoded_frame_->pts - first_audio_pts_,
@@ -124,7 +124,7 @@ AVFrame* AudioFrameSource::next() {
             {1, 1000000}
         );*/
 
-        const uint8_t * const *in_data = (const uint8_t * const *)decoded_frame_->extended_data;
+        //const uint8_t * const *in_data = (const uint8_t * const *)decoded_frame_->extended_data;
 
         // Reuse the conversion frame by clearing previous contents
         av_frame_unref(converted_frame_);
@@ -368,50 +368,70 @@ int AudioFrameSource::fifoSize(){
 }
 
 void AudioFrameSource::decodeIntoFifo(){
-    if (av_read_frame(fmt_, pkt_) < 0) return;
+	while(true){
+	    if (av_read_frame(fmt_, pkt_) < 0) return;
+	
+	    if (pkt_->stream_index != audio_stream_index_){
+	        av_packet_unref(pkt_);
+	        return;
+	    }
+	
+	    if (avcodec_send_packet(dec_ctx_, pkt_) < 0) {
+	        av_packet_unref(pkt_);
+	        return;
+	    }
+	
+	    av_packet_unref(pkt_);
 
-    if (pkt_->stream_index != audio_stream_index_){
-        av_packet_unref(pkt_);
-        return;
-    }
-
-    if (avcodec_send_packet(dec_ctx_, pkt_) < 0) {
-        av_packet_unref(pkt_);
-        return;
-    }
-
-    av_packet_unref(pkt_);
-
-    if (avcodec_receive_frame(dec_ctx_, decoded_frame_) < 0) return;
-    decoded_frame_->pts = av_rescale_q(
-        decoded_frame_->pts - first_audio_pts_,
-        src_time_base_,
-        {1, 1000000}
-    );
-
-    av_frame_unref(converted_frame_);
-
-    total_samples_in_ += decoded_frame_->nb_samples;
-    int64_t expected_out = av_rescale(total_samples_in_, cfg_.samplerate, dec_ctx_->sample_rate);
-    int64_t nb_samples = expected_out - total_samples_out_;
-    converted_frame_->nb_samples = (int)(nb_samples + swr_get_delay(swr_, dec_ctx_->sample_rate));
-
-    converted_frame_->format = AV_SAMPLE_FMT_FLTP;
-    converted_frame_->ch_layout = out_ch_layout_;
-    converted_frame_->sample_rate = cfg_.samplerate;
-    av_frame_get_buffer(converted_frame_, 0);
-    av_frame_make_writable(converted_frame_);
-
-    int samples = swr_convert(
-        swr_,
-        converted_frame_->data, converted_frame_->nb_samples,
-        (const uint8_t**)decoded_frame_->extended_data, decoded_frame_->nb_samples
-    );
-
-    if(samples < 0) return;
-    total_samples_out_ += samples;
-    converted_frame_->nb_samples = samples;
-    pushToFifo(converted_frame_);
+		if (avcodec_receive_frame(dec_ctx_, decoded_frame_) == AVERROR(EAGAIN)) continue;
+	    if (avcodec_receive_frame(dec_ctx_, decoded_frame_) < 0) return;
+		
+	    /*decoded_frame_->pts = av_rescale_q(
+	        decoded_frame_->pts - first_audio_pts_,
+	        src_time_base_,
+	        {1, 1000000}
+	    );*/
+		int64_t source_pts = decoded_frame_->best_effort_timestamp;
+		if(source_pts == AV_NOPTS_VALUE){
+			source_pts = decoded_frame_->pts;
+		}
+		if (source_pts != AV_NOPTS_VALUE && first_audio_pts_ == AV_NOPTS_VALUE){
+			first_audio_pts_ = source_pts;
+			LOG_DEBUG("[AudioFramesource] first decoded audio PTS: " + std::to_string(first_audio_pts_));
+		}
+	
+	    av_frame_unref(converted_frame_);
+	
+	    total_samples_in_ += decoded_frame_->nb_samples;
+	    int64_t expected_out = av_rescale(total_samples_in_, cfg_.samplerate, dec_ctx_->sample_rate);
+	    int64_t nb_samples = expected_out - total_samples_out_;
+	    converted_frame_->nb_samples = (int)(nb_samples + swr_get_delay(swr_, dec_ctx_->sample_rate));
+	
+	    converted_frame_->format = AV_SAMPLE_FMT_FLTP;
+	    converted_frame_->ch_layout = out_ch_layout_;
+	    converted_frame_->sample_rate = cfg_.samplerate;
+	    if(av_frame_get_buffer(converted_frame_, 0) < 0) {
+			return;
+		}
+	    if(av_frame_make_writable(converted_frame_) < 0) {
+			return;
+		}
+	
+	    int samples = swr_convert(
+	        swr_,
+	        converted_frame_->data, 
+			converted_frame_->nb_samples,
+	        (const uint8_t**)decoded_frame_->extended_data, decoded_frame_->nb_samples
+	    );
+	
+	    if(samples < 0) return;
+	    total_samples_out_ += samples;
+	    converted_frame_->nb_samples = samples;
+	    if (!pushToFifo(converted_frame_)){
+			return;
+		}
+		return;
+	}
 }
 // Remove any stale audio to help with audio/video resync on video switch
 void AudioFrameSource::flushFifo() {
