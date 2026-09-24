@@ -382,9 +382,9 @@ void AudioFrameSource::decodeIntoFifo(){
 	    }
 	
 	    av_packet_unref(pkt_);
-
-		if (avcodec_receive_frame(dec_ctx_, decoded_frame_) == AVERROR(EAGAIN)) continue;
-	    if (avcodec_receive_frame(dec_ctx_, decoded_frame_) < 0) return;
+		ret = avcodec_receive_frame(dec_ctx_, decoded_frame_);
+		if (ret == AVERROR(EAGAIN)) continue;
+	    if (ret < 0) return;
 		
 	    /*decoded_frame_->pts = av_rescale_q(
 	        decoded_frame_->pts - first_audio_pts_,
