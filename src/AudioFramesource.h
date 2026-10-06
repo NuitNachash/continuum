@@ -10,6 +10,7 @@ extern "C" {
 
 #include "Config.h"
 #include <mutex>
+#include <atomic>
 
 // Responsible for reading audio from a media file, decoding it,
 // converting it into a format suitable for encoding, and supplying
@@ -39,16 +40,16 @@ public:
     void switchFile(const std::string& path);
 
     // Returns the number of samples currently bufferd in FIFO
-    int fifoSize() const {
-        return av_audio_fifo_size(audio_fifo_);
-    }
+    // int fifoSize() const {
+    //    return av_audio_fifo_size(audio_fifo_);
+    //}
 
     // Flush left over stale audio 
     void flushFifo();
 
-    int64_t first_audio_pts_ = 0;
-
     int fifoSize();
+
+    int64_t first_audio_pts_ = 0;
 
     void decodeIntoFifo();
 
@@ -61,6 +62,8 @@ public:
 
     int64_t firstAudioPts() const { return first_audio_pts_; }
     AVRational srcTimeBase() const { return src_time_base_; }
+
+    std::atomic<bool> eof_ = false;
 
 private:
     // Initializes the decoder 

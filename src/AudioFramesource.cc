@@ -358,19 +358,23 @@ void AudioFrameSource::switchFile(const std::string& path) {
 
     // Discard any buffered audio from the previous file
     av_audio_fifo_reset(audio_fifo_);
+    eof_ = false;
 
     
 }
 
-int AudioFrameSource::fifoSize(){
+int AudioFrameSource::fifoSize() {
     std::lock_guard<std::mutex> lock(fifo_mutex_);
-    return av_audio_fifo_size(audio_fifo_);
+    return av_audio_fifo_size(audio_fifo_); 
 }
 
 void AudioFrameSource::decodeIntoFifo(){
 	while(true){
-	    if (av_read_frame(fmt_, pkt_) < 0) return;
-	
+	    if (av_read_frame(fmt_, pkt_) < 0) {
+            eof_ = true;
+            return;
+        }
+
 	    if (pkt_->stream_index != audio_stream_index_){
 	        av_packet_unref(pkt_);
 	        return;
@@ -382,9 +386,10 @@ void AudioFrameSource::decodeIntoFifo(){
 	    }
 	
 	    av_packet_unref(pkt_);
+        int ret = avcodec_receive_frame(dec_ctx_, decoded_frame_);
 
-		if (avcodec_receive_frame(dec_ctx_, decoded_frame_) == AVERROR(EAGAIN)) continue;
-	    if (avcodec_receive_frame(dec_ctx_, decoded_frame_) < 0) return;
+		if (ret == AVERROR(EAGAIN)) continue;
+	    if (ret < 0) return;
 		
 	    /*decoded_frame_->pts = av_rescale_q(
 	        decoded_frame_->pts - first_audio_pts_,
