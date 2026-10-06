@@ -71,7 +71,11 @@ bool ContinuumEngine::sendOneVideoFrame() {
         } else {
             // Continue through queue
             performSwitch(nextPath);
-            frame = source_.nextBuffered();
+            for (int i = 0; i < 10; i++) {
+                frame = source_.nextBuffered();
+                if (frame) break;
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            }
             if(!frame) return false;
         }
     }
@@ -191,7 +195,14 @@ void ContinuumEngine::start() {
                 sendOneAudioFrame(aframe);
             } else {
                 // If no audio is available, continue advancing video
-                if (!sendOneVideoFrame()) break;
+                int64_t video_us = av_rescale_q(timeline_.getPts(true), encoder_.video_time_base(), {1, 1000000});
+                int64_t audio_us = av_rescale_q(timeline_.getPts(false), encoder_.audio_time_base(), {1, 1000000});
+                if (video_us - audio_us < 500000){
+                    if (!sendOneVideoFrame()) break;
+                } else {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                }
+                
             }
         }
         if (++frame_count % 30 == 0) {
@@ -303,7 +314,7 @@ void ContinuumEngine::performSwitch(const std::string& nextPath) {
         audioThreadRunning_ = true;
         audioDecodeThread_ = std::thread([this]() {
             while (audioThreadRunning_) {
-                if (audioSource_.fifoSize() < 8192) {
+                if (!audioSource_.eof_ && audioSource_.fifoSize() < 8192) {
                     audioSource_.decodeIntoFifo();
                 }
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -316,7 +327,7 @@ void ContinuumEngine::performSwitch(const std::string& nextPath) {
         audioThreadRunning_ = true;
         audioDecodeThread_ = std::thread([this]() {
             while (audioThreadRunning_) {
-                if (audioSource_.fifoSize() < 8192) {
+                if (!audioSource_.eof_ && audioSource_.fifoSize() < 8192) {
                     audioSource_.decodeIntoFifo();
                 }
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -330,8 +341,6 @@ void ContinuumEngine::performSwitch(const std::string& nextPath) {
             performSwitch(current_path_);
         }
     }
-
-    audioThreadRunning_ = true;
 }
 
 // Returns current engine state for monitoring/control
