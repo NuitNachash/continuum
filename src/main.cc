@@ -72,6 +72,7 @@ void printUsage() {
         "  --once                  Play a single file and exit (requires --media)\n"
         "  --control-file <path>   Control command file (default: control.txt)\n"
         "  --add-file <path>       Dynamic playlist-add file (default: add_video.txt)\n"
+        "  --seek <00:00:00>       Seek in file to start playing at timestamp (default 00:00:00)\n"
         "  --status-file <path>    Status output file (default: status.json)\n"
         "  --status-interval <n>   Seconds between status writes (default: 5)\n"
         "  --help                  Show this message\n";
@@ -108,6 +109,7 @@ int main(int argc, char** argv) {
     std::string statusFile = getDefaultConfigDir() + "status.json";
     int statusInterval = 5;
     bool onceMode = false;
+    int64_t seek_pts = 0;
 
     // Parse command line arguments
     for (int i = 1; i < argc; i++) {
@@ -130,6 +132,8 @@ int main(int argc, char** argv) {
             statusFile = argv[++i];
         else if (arg == "--status-interval" && i + 1 < argc)
             statusInterval = std::stoi(argv[++i]);
+        else if (arg == "--seek" && i + 1 < argc)
+            seek_pts = std::stoi(argv[++i]);
         else if (arg == "--help") {
             printUsage();
             return 0;

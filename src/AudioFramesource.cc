@@ -77,6 +77,8 @@ AVFrame* AudioFrameSource::next() {
         if (out) {
             return out;
         }
+    } else {
+        LOG_WARN("[AudioFrameSource] FIFO underrun: " + std::to_string(av_audio_fifo_size(audio_fifo_)) + " samples");
     }
     while(true) {
         // Read the next compressed packet from the media file
@@ -262,8 +264,13 @@ AVFrame* AudioFrameSource::popFifoFrame1024() {
 
 void AudioFrameSource::openFile(const std::string& path){
     // Open the media container
-    if (avformat_open_input(&fmt_, path.c_str(), nullptr, nullptr) < 0)
-        throw std::runtime_error("Failed to open mp4");
+    AVDictionary* opts = nullptr;
+    av_dict_set(&opts, "timeout", "200000", 0);
+    if (avformat_open_input(&fmt_, path.c_str(), nullptr, &opts) < 0) {
+        av_dict_free(&opts);
+        throw std::runtime_error("Failed to open file: " + path);
+    }
+    av_dict_free(&opts);
 
     // Read stream metadata so FFmpeg knows what streams exist
     if (avformat_find_stream_info(fmt_, nullptr) < 0)
@@ -390,12 +397,7 @@ void AudioFrameSource::decodeIntoFifo(){
 
 		if (ret == AVERROR(EAGAIN)) continue;
 	    if (ret < 0) return;
-		
-	    /*decoded_frame_->pts = av_rescale_q(
-	        decoded_frame_->pts - first_audio_pts_,
-	        src_time_base_,
-	        {1, 1000000}
-	    );*/
+
 		int64_t source_pts = decoded_frame_->best_effort_timestamp;
 		if(source_pts == AV_NOPTS_VALUE){
 			source_pts = decoded_frame_->pts;
@@ -410,7 +412,7 @@ void AudioFrameSource::decodeIntoFifo(){
 	    total_samples_in_ += decoded_frame_->nb_samples;
 	    int64_t expected_out = av_rescale(total_samples_in_, cfg_.samplerate, dec_ctx_->sample_rate);
 	    int64_t nb_samples = expected_out - total_samples_out_;
-	    converted_frame_->nb_samples = (int)(nb_samples + swr_get_delay(swr_, dec_ctx_->sample_rate));
+	    converted_frame_->nb_samples = (int)nb_samples;
 	
 	    converted_frame_->format = AV_SAMPLE_FMT_FLTP;
 	    converted_frame_->ch_layout = out_ch_layout_;
@@ -435,7 +437,7 @@ void AudioFrameSource::decodeIntoFifo(){
 	    if (!pushToFifo(converted_frame_)){
 			return;
 		}
-		return;
+	
 	}
 }
 // Remove any stale audio to help with audio/video resync on video switch

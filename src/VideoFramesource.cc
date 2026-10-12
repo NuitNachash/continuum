@@ -50,12 +50,16 @@ VideoFrameSource::VideoFrameSource(const config& cfg) : cfg_(cfg) {
 // Opens a media file and initializes the video decoder
 void VideoFrameSource::openFile(const std::string& path){
     // Open input container
-    int ret = avformat_open_input(&fmt_, path.c_str(), nullptr, nullptr);
-    if (ret < 0)
-        throw std::runtime_error("Failed to open mp4 file");
+    AVDictionary* opts = nullptr;
+    av_dict_set(&opts, "timeout", "200000", 0);
+    if (avformat_open_input(&fmt_, path.c_str(), nullptr, &opts) < 0) {
+        av_dict_free(&opts);
+        throw std::runtime_error("Failed to open file: " + path);
+    }
+    av_dict_free(&opts);
 
     // Read stream metadata
-    ret = avformat_find_stream_info(fmt_, nullptr);
+    int ret = avformat_find_stream_info(fmt_, nullptr);
     if (ret < 0)
         throw std::runtime_error("Failed to find stream info");
 
@@ -193,7 +197,7 @@ VideoFrameSource::~VideoFrameSource() {
 // 3. Receive decoded frame
 // 4. Convert frame to encoder format
 AVFrame* VideoFrameSource::next() {
-    LOG_DEBUG("[VideoFrameSource] next() called");
+    //LOG_DEBUG("[VideoFrameSource] next() called");
     while (true) {
         int ret = av_read_frame(fmt_, pkt_);
 
@@ -507,7 +511,7 @@ AVFrame* VideoFrameSource::next() {
 }
 
 AVFrame* VideoFrameSource::nextBuffered() {
-    LOG_DEBUG("[nextBuffered] buffer size: " + std::to_string(frame_buffer_.size()));
+    //LOG_DEBUG("[nextBuffered] buffer size: " + std::to_string(frame_buffer_.size()));
     if (flushing_)
         return nullptr;
     

@@ -156,6 +156,20 @@ void ContinuumEngine::start() {
     int64_t frame_count = 0;
     stream_start_ = std::chrono::steady_clock::now();
     LOG_INFO("[Engine] streaming - Ctrl+C to stop");
+    audioThreadRunning_ = true;
+    audioDecodeThread_ = std::thread([this]() {
+        while (audioThreadRunning_) {
+            if (!audioSource_.eof_ && audioSource_.fifoSize() < 8192) {
+                audioSource_.decodeIntoFifo();
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+    });
+
+    while (audioSource_.fifoSize() < 8192) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+
 
     /*audioThreadRunning_=true;
     std::thread audioDecodeThread([&]() {
