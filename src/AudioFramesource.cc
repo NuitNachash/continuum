@@ -105,28 +105,6 @@ AVFrame* AudioFrameSource::next() {
         int ret = avcodec_receive_frame(dec_ctx_, decoded_frame_);
         if (ret < 0)
             continue;
-		/*int64_t source_pts = decoded_frame_->best_effort_timestamp;
-
-		if (source_pts == AV_NOPTS_VALUE){
-			source_pts = decoded_frame_->pts;
-		}
-		if (source_pts == AV_NOPTS_VALUE){
-			LOG_WARN("[AudioFramesource] audio frame has no valid PTS, skipping");
-			continue
-		}
-		if (first_audio_pts_ == AV_NOPTS_VALUE){
-			first_audio_pts_ = source_pts;
-			LOG_DEBUG("[AudioFramesource] first decoded audio PTS: " + std::to_string(first_audio_pts_));
-		}
-		decoded_frame_->pts = source_pts;*/
-
-        /*decoded_frame_->pts = av_rescale_q(
-            decoded_frame_->pts - first_audio_pts_,
-            src_time_base_,
-            {1, 1000000}
-        );*/
-
-        //const uint8_t * const *in_data = (const uint8_t * const *)decoded_frame_->extended_data;
 
         // Reuse the conversion frame by clearing previous contents
         av_frame_unref(converted_frame_);
@@ -134,7 +112,7 @@ AVFrame* AudioFrameSource::next() {
         total_samples_in_ += decoded_frame_->nb_samples;
         int64_t expected_out = av_rescale(total_samples_in_, cfg_.samplerate, dec_ctx_->sample_rate);
         int64_t nb_samples = expected_out - total_samples_out_;
-        converted_frame_->nb_samples = (int)(nb_samples + swr_get_delay(swr_, dec_ctx_->sample_rate));
+        converted_frame_->nb_samples = (int)(nb_samples);
         
         // Describe the desired output frame format
         converted_frame_->format = AV_SAMPLE_FMT_FLTP;
@@ -165,9 +143,6 @@ AVFrame* AudioFrameSource::next() {
         // Append converted samples into the FIFO
         if (!pushToFifo(converted_frame_))
             continue;
-
-        // Number of samples corresponding to one video frame
-        int samples_per_call = cfg_.samplerate / cfg_.fps;
 
         // Try to extract one encoder-sized frame (1024 samples)
         AVFrame* out = popFifoFrame1024();
@@ -290,7 +265,6 @@ void AudioFrameSource::openFile(const std::string& path){
 
     // Seek to the beginning of the audio stream
     av_packet_unref(pkt_);
-    av_seek_frame(fmt_, audio_stream_index_, 0, AVSEEK_FLAG_BACKWARD);
     
     AVStream* stream = fmt_->streams[audio_stream_index_];
 
@@ -350,33 +324,43 @@ void AudioFrameSource::closeFile() {
 
 void AudioFrameSource::switchFile(const std::string& path) {
     avcodec_flush_buffers(dec_ctx_);
+    eof_.store(true);
     // Close the current file and open the new one
     closeFile();
-    total_samples_in_ = 0;
-    total_samples_out_ = 0;
-    openFile(path);
+    
 
     // The decoder properties may have changed, so recreate the resampler
     if (swr_) {
         swr_free(&swr_);
     }
 
+    total_samples_in_ = 0;
+    total_samples_out_ = 0;
+    first_audio_pts_ = AV_NOPTS_VALUE;
+    {
+        std::lock_guard<std::mutex> lock(fifo_mutex_);
+        av_audio_fifo_reset(audio_fifo_);
+    }
+
+    openFile(path);
     initResampler();
 
-    // Discard any buffered audio from the previous file
-    av_audio_fifo_reset(audio_fifo_);
-    eof_ = false;
+    
+    eof_.store(false);
 
     
 }
 
 int AudioFrameSource::fifoSize() {
-    std::lock_guard<std::mutex> lock(fifo_mutex_);
-    return av_audio_fifo_size(audio_fifo_); 
+    return av_audio_fifo_size(audio_fifo_);
 }
 
 void AudioFrameSource::decodeIntoFifo(){
 	while(true){
+        if (fifoSize() >= 8192){
+            return;
+        }
+
 	    if (av_read_frame(fmt_, pkt_) < 0) {
             eof_ = true;
             return;
@@ -384,7 +368,7 @@ void AudioFrameSource::decodeIntoFifo(){
 
 	    if (pkt_->stream_index != audio_stream_index_){
 	        av_packet_unref(pkt_);
-	        return;
+	        continue;
 	    }
 	
 	    if (avcodec_send_packet(dec_ctx_, pkt_) < 0) {
