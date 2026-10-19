@@ -9,7 +9,8 @@
 #include "Streamer.h"
 #include "VideoFramesource.h"
 #include "AudioFramesource.h"
-#include "TimelineManager.h"
+#include "ClockSync.h"
+#include "FrameWriter.h"
 #include "PlaylistManager.h"
 
 // Represents the current state of the streaming engine
@@ -86,6 +87,11 @@ public:
 
     std::thread audioDecodeThread_;
 
+    int64_t last_video_pts_ = 0;
+    int64_t last_audio_pts_ = 0;
+    int64_t last_video_duration_ = 0;
+    int64_t last_audio_duration_ = 0;
+
 private:
     // Reads, timestamps, encodes, and streams one video frame
     bool sendOneVideoFrame();
@@ -107,14 +113,14 @@ private:
     AudioFrameSource audioSource_;
 
     // Keeps audio and video timestamps synced
-    TimelineManager timeline_;
+    FrameWriter writer_;
 
     // Manages the list of media files to play
     PlaylistManager playlist_;
     
     // Real-world clock time when streaming started
     // Used to sync output timing
-    std::chrono::steady_clock::time_point stream_start_;
+    ClockSync clock_;
 
     // Indicates whether the main streaming loop should continue
     bool running_ = false;
@@ -140,7 +146,7 @@ private:
 
     // Stores the video timeline position when a media switch occurs
     // Used for reporting playback relative to current file
-    std::atomic<int64_t> video_pts_at_switch = 0;
+    std::atomic<int64_t> video_pts_at_switch_ = 0;
 
     // Helper to call switch even from SKIP command to switch video data
     void performSwitch(const std::string& nextPath);

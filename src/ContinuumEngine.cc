@@ -16,6 +16,8 @@ ContinuumEngine::ContinuumEngine(const config& cfg)
       streamer_(cfg_, encoder_),
       source_(cfg_),
       audioSource_(cfg_, encoder_.audio_time_base()),
+      clock_(),
+      writer_(streamer_, clock_),
       current_path_(cfg.mp4Path)
 {}
 
@@ -32,118 +34,46 @@ void ContinuumEngine::addMedia(const std::string& path) {
 
 // Reads, timestamps, encodes, and streams one video frame
 bool ContinuumEngine::sendOneVideoFrame() {
-    LOG_DEBUG("[Engine] sendOneVideoFrame called");
-
-    while (running_) {
-        int cmp = timeline_.compare(encoder_.video_time_base(), encoder_.audio_time_base());
-        if (cmp <= 0) break;
-
-        int64_t video_us = av_rescale_q(timeline_.getPts(true), encoder_.video_time_base(), {1, 1000000});
-        int64_t audio_us = av_rescale_q(timeline_.getPts(false), encoder_.audio_time_base(), {1, 1000000});
-        if (video_us - audio_us > 500000) break;
-
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
     AVFrame* frame = source_.nextBuffered();
 
-    // End of current media file
-    // Move to the next playlist item if continuous playback is enabled
     if (!frame) {
-        if (once_mode_) {
-            stop();
-            return false;
-        }
+        if (once_mode_) { stop(); return false; }
         std::string nextPath = playlist_.getNext();
         if (nextPath.empty()) {
-
-            // If nothing queued; replay current file rather than stopping stream
             std::string fallbackPath;
             {
                 std::lock_guard<std::mutex> lock(path_mutex_);
                 fallbackPath = current_path_;
             }
-            // Switch to same file again creating a loop
             performSwitch(fallbackPath);
             frame = source_.nextBuffered();
-
-            // If it still can't recover, then end stream
             if (!frame) return false;
         } else {
-            // Continue through queue
             performSwitch(nextPath);
             for (int i = 0; i < 10; i++) {
                 frame = source_.nextBuffered();
                 if (frame) break;
                 std::this_thread::sleep_for(std::chrono::milliseconds(5));
             }
-            if(!frame) return false;
+            if (!frame) return false;
         }
     }
 
-    // Assign the next video timestamp and advance the timeline
-    frame->pts = timeline_.getPts(true);
-    timeline_.advance(true, 1);
-
-    // Send the raw frame to the encoder
-    if (encoder_.sendVideo(frame) < 0) return false;
-
-    // Receive encoded packets and send them to the streamer
+    encoder_.sendVideo(frame);
     encoder_.receiveVideo([&](AVPacket* pkt) {
-        // Set the correct stream index for the output container
-        pkt->stream_index = streamer_.video_stream()->index;
-
-        // Convert encoder timestamps into the streamer's time base
-        av_packet_rescale_ts(
-            pkt, 
-            encoder_.video_time_base(), 
-            streamer_.time_base_video()
-        );
-
-        streamer_.write(pkt);
+        last_video_pts_ = pkt->pts;
+        writer_.writeVideo(pkt, encoder_.video_time_base());
     });
     return true;
 }
 
 // Encodes and streams one audio frame
 bool ContinuumEngine::sendOneAudioFrame(AVFrame* aframe) {
-    // Calculate when this frame should be displayed based on the
-    // current video timeline position
-    double audio_time_sec = timeline_.getPts(false) * av_q2d(encoder_.audio_time_base());
-    auto target = stream_start_ + std::chrono::duration<double>(audio_time_sec);
-
-    // Sync playback speed with real time
-    while (running_ && std::chrono::steady_clock::now() < target)
-        std::this_thread::sleep_for(std::chrono::milliseconds(5));
-
-    // Assign the current audio timestamp
-    aframe->pts = timeline_.getPts(false);
-
-    // Calculate how much the audio timeline should advance based
-    // on the number of samples in the frame
-    int64_t duration = av_rescale_q(
-        aframe->nb_samples, 
-        AVRational{1, cfg_.samplerate}, 
-        encoder_.audio_time_base()
-    );
-    timeline_.advance(false, duration);
-
-    // Send audio samples to the encoder
     encoder_.sendAudio(aframe);
-
-    // The encoder no longer needs this frame
     av_frame_free(&aframe);
-
-    // Receive encoded audio packets and stream them
-    encoder_.receiveAudio([&](AVPacket* pkt_) {
-        pkt_->stream_index = streamer_.audio_stream()->index;
-
-        // Convert timestamps from encoder time base to output stream time base
-        av_packet_rescale_ts(
-            pkt_, 
-            encoder_.audio_time_base(), 
-            streamer_.time_base_audio()
-        );
-        streamer_.write(pkt_);
+    encoder_.receiveAudio([&](AVPacket* pkt) {
+        last_audio_pts_ = pkt->pts;
+        writer_.writeAudio(pkt, encoder_.audio_time_base());
     });
     return true;
 }
@@ -153,9 +83,9 @@ bool ContinuumEngine::sendOneAudioFrame(AVFrame* aframe) {
 // based on the current timeline position
 void ContinuumEngine::start() {
     running_ = true;
-    int64_t frame_count = 0;
-    stream_start_ = std::chrono::steady_clock::now();
+    clock_.start();
     LOG_INFO("[Engine] streaming - Ctrl+C to stop");
+
     audioThreadRunning_ = true;
     audioDecodeThread_ = std::thread([this]() {
         while (audioThreadRunning_) {
@@ -166,72 +96,42 @@ void ContinuumEngine::start() {
         }
     });
 
-    while (audioSource_.fifoSize() < 8192) {
+    while (audioSource_.fifoSize() < 8192)
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
-    }
-
-
-    /*audioThreadRunning_=true;
-    std::thread audioDecodeThread([&]() {
-        while (audioThreadRunning_) {
-            if (audioSource_.fifoSize() < 8192)
-                audioSource_.decodeIntoFifo();
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
-        }
-    });*/
+    LOG_INFO("[Engine] FIFO pre-filled: " + std::to_string(audioSource_.fifoSize()) + " samples");
 
     while (running_) {
-        // Pause playback while keeping the thread alive
         if (paused_) {
             std::this_thread::sleep_for(std::chrono::milliseconds(50));
             continue;
         }
 
-        // Handle requested skip
+        if (audioSource_.eof_ && audioSource_.fifoSize() == 0) {
+            LOG_INFO("[Engine] Audio EOF - triggering switch");
+            std::string nextPath = playlist_.getNext();
+            if (!nextPath.empty()) {
+                performSwitch(nextPath);
+            } else {
+                std::lock_guard<std::mutex> lock(path_mutex_);
+                performSwitch(current_path_);
+            }
+            continue;
+        }
+
         if (skip_requested_) {
             skip_requested_ = false;
             std::string nextPath = playlist_.getNext();
-            if(!nextPath.empty()) {
-                performSwitch(nextPath);
-            }
+            if (!nextPath.empty()) performSwitch(nextPath);
         }
 
-        // Prevent this loop from consuming excessive CPU
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
-        // Compare audio and video timestamps
-        // Send whichever stream is currently behind
-        if (timeline_.compare(encoder_.video_time_base(), encoder_.audio_time_base()) <= 0) {
-            if (!sendOneVideoFrame()) break;
+        AVFrame* aframe = audioSource_.next();
+        if (aframe) {
+            sendOneAudioFrame(aframe);
+            sendOneVideoFrame();
         } else {
-            AVFrame* aframe = audioSource_.next();
-            if (aframe) {
-                sendOneAudioFrame(aframe);
-            } else {
-                // If no audio is available, continue advancing video
-                int64_t video_us = av_rescale_q(timeline_.getPts(true), encoder_.video_time_base(), {1, 1000000});
-                int64_t audio_us = av_rescale_q(timeline_.getPts(false), encoder_.audio_time_base(), {1, 1000000});
-                if (video_us - audio_us < 500000){
-                    if (!sendOneVideoFrame()) break;
-                } else {
-                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
-                }
-                
-            }
-        }
-        if (++frame_count % 30 == 0) {
-          int64_t video_us = av_rescale_q(timeline_.getPts(true), encoder_.video_time_base(), {1, 1000000});
-          int64_t audio_us = av_rescale_q(timeline_.getPts(false), encoder_.audio_time_base(), {1, 1000000});
-          int64_t drift_us = video_us - audio_us;
-          LOG_DEBUG("[Drift] video_us: " + std::to_string(video_us) + "us");
-          LOG_DEBUG("[Drift] audio_us: " + std::to_string(audio_us) + "us");
-          LOG_DEBUG("[Drift] Drift: " + std::to_string(drift_us) + "us");
-
-          if (std::abs(drift_us) > 3000) {
-            int64_t correction = av_rescale_q(drift_us, {1, 1000000}, encoder_.video_time_base());
-            timeline_.nudgeAudioPts(correction / 15);
-
-          }
+            sendOneVideoFrame();
         }
     }
     audioThreadRunning_ = false;
@@ -266,62 +166,36 @@ void ContinuumEngine::forceClose(){
 void ContinuumEngine::performSwitch(const std::string& nextPath) {
     LOG_INFO("[Engine] performSwitch start: " + nextPath);
     audioThreadRunning_ = false;
-    
+
     try {
         if (audioDecodeThread_.joinable()) {
-            LOG_INFO("[Engine] joining audioDecodeThread");
             audioDecodeThread_.join();
         }
-
-        LOG_INFO("[Engine] flushing fifo and buffer");
-        //audioSource_.flushFifo();
-       // source_.flushBuffer();
 
         {
             std::lock_guard<std::mutex> lock(path_mutex_);
             current_path_ = nextPath;
         }
 
-        LOG_INFO("[Engine] switching video source");
-        video_pts_at_switch = timeline_.getPts(true);
-        //source_.switchFile(nextPath);
-
-        LOG_INFO("[Engine] switching audio source");
-        int64_t audio_pts_at_switch = timeline_.getPts(false);
-        // audioSource_.switchFile(nextPath);
-        
-        LOG_INFO(
-            "[Engine] timeline before switch - video: " +
-            std::to_string(video_pts_at_switch) +
-            " audio: " +
-            std::to_string(audio_pts_at_switch)
+        // Accumulate pts offset for continuous streaming
+        // offset += last_pts - first_pts + one_frame_duration
+        int64_t video_frame_dur = 1; // 1 tick at 1/60
+        int64_t audio_frame_dur = av_rescale_q(
+            1024, {1, cfg_.samplerate}, encoder_.audio_time_base()
         );
+
+        writer_.setVideoOffset(writer_.videoOffset() + last_video_pts_ + video_frame_dur);
+        writer_.setAudioOffset(writer_.audioOffset() + last_audio_pts_ + audio_frame_dur);
+
+        video_pts_at_switch_ = writer_.videoOffset();
+
+        LOG_INFO("[Engine] pts offset - video: " + std::to_string(writer_.videoOffset()) +
+                 " audio: " + std::to_string(writer_.audioOffset()));
 
         audioSource_.flushFifo();
         source_.flushBuffer();
-      
         source_.switchFile(nextPath);
         audioSource_.switchFile(nextPath);
-        // Calculate start offset between video and audio streams
-        // int64_t video_start_us = av_rescale_q(source_.firstPts(), source_.srcTimeBase(), {1, 1000000});
-        // int64_t audio_start_us = av_rescale_q(audioSource_.firstAudioPts(), audioSource_.srcTimeBase(), {1, 1000000});
-        // int64_t start_offset_us = video_start_us - audio_start_us;
-
-        // Snap video PTS to audio master clock with start offset correction
-        // int64_t audio_pts = timeline_.getPts(false);
-        /* int64_t video_pts_synced = av_rescale_q(
-            audio_pts,
-            encoder_.audio_time_base(),
-            encoder_.video_time_base()
-        );
-
-        if (std::abs(start_offset_us) > 1000) {
-            LOG_DEBUG("[Engine] start offset correction: " + std::to_string(start_offset_us) + "us");
-            int64_t correction = av_rescale_q(start_offset_us, {1, 1000000}, encoder_.video_time_base());
-            video_pts_synced -= correction;
-        }
-
-        timeline_.setVideoPts(video_pts_synced);*/
 
         LOG_INFO("[Engine] performSwitch complete: " + nextPath);
 
@@ -335,25 +209,22 @@ void ContinuumEngine::performSwitch(const std::string& nextPath) {
             }
         });
 
-    } catch (const std::exception& e) {
-        LOG_ERROR("[Engine] Switch failed: " + std::string(e.what()) + " file: " + nextPath);
+        while (audioSource_.fifoSize() < 8192)
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        LOG_INFO("[Engine] FIFO refilled after switch: " + std::to_string(audioSource_.fifoSize()));
 
+    } catch (const std::exception& e) {
+        LOG_ERROR("[Engine] Switch failed: " + std::string(e.what()));
         audioThreadRunning_ = true;
         audioDecodeThread_ = std::thread([this]() {
             while (audioThreadRunning_) {
-                if (!audioSource_.eof_ && audioSource_.fifoSize() < 8192) {
+                if (!audioSource_.eof_ && audioSource_.fifoSize() < 8192)
                     audioSource_.decodeIntoFifo();
-                }
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
             }
         });
-
         std::string next = playlist_.getNext();
-        if (!next.empty()) {
-            performSwitch(next);
-        } else {
-            performSwitch(current_path_);
-        }
+        performSwitch(!next.empty() ? next : current_path_);
     }
 }
 
@@ -361,22 +232,14 @@ void ContinuumEngine::performSwitch(const std::string& nextPath) {
 EngineStatus ContinuumEngine::getStatus() const {
     EngineStatus s;
     {
-        // Protect current_path_ because it can be modified by another thread
         std::lock_guard<std::mutex> lock(path_mutex_);
         s.current_path = current_path_;
     }
     s.paused = paused_;
     s.running = running_;
-
-    // Current audio/video timeline position
-    s.video_pts = timeline_.getPts(true);
-    s.audio_pts = timeline_.getPts(false);
-
-    // How far playback has progressed since the last media switch
-    // Useful for external programs to track switch points
-    s.video_pts_since_switch = s.video_pts - video_pts_at_switch.load();
-
-    // Duration of the currently playing media file
+    s.video_pts = writer_.videoOffset() + last_video_pts_;
+    s.audio_pts = clock_.audioClockUs();
+    s.video_pts_since_switch = last_video_pts_;
     s.current_duration = source_.getDuration();
     return s;
 }
