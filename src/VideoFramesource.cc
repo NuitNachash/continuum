@@ -84,7 +84,7 @@ void VideoFrameSource::openFile(const std::string& path){
 
 
 
-    /*while (av_read_frame(fmt_, pkt_) >= 0) {
+    while (av_read_frame(fmt_, pkt_) >= 0) {
         if (pkt_->stream_index == video_stream_index_) {
             first_pts_ = pkt_->pts;
             av_packet_unref(pkt_);
@@ -93,7 +93,6 @@ void VideoFrameSource::openFile(const std::string& path){
         av_packet_unref(pkt_);
     }
     av_seek_frame(fmt_, video_stream_index_, first_pts_, AVSEEK_FLAG_BACKWARD);
-    LOG_DEBUG("[VideoFrameSource] first_pts_: " + std::to_string(first_pts_));*/
     
     
 
@@ -163,10 +162,7 @@ void VideoFrameSource::closeFile(){
 // Switches playback to another media file
 void VideoFrameSource::switchFile(const std::string& path){
     flushing_ = true;
-    while (!frame_buffer_.empty()){
-        av_frame_free(&frame_buffer_.front());
-        frame_buffer_.pop();
-    }
+    flushBuffer();
     avcodec_flush_buffers(dec_ctx_);
     closeFile();
     openFile(path);
@@ -201,118 +197,6 @@ AVFrame* VideoFrameSource::next() {
     while (true) {
         int ret = av_read_frame(fmt_, pkt_);
 
-        // End of file
-        /*if (ret < 0) {
-            // Flush decoder
-            avcodec_send_packet(dec_ctx_, nullptr);
-            // Drain remaining frames
-            while (avcodec_receive_frame(dec_ctx_, frame_) == 0) {
-                // still got buffered frames, return them
-                if (frame_->width > 0 && frame_->height > 0 && frame_->data[0]) {
-                    frame_->pts = av_rescale_q(
-                        frame_->pts - first_pts_,
-                        src_time_base_,
-                        {1, 1000000}
-                    );
-                    if (frame_->pts < 0) frame_->pts = 0;
-                    sws_scale(sws_, frame_->data, frame_->linesize,
-                            0, dec_ctx_->height,
-                            scaled_frame_->data, scaled_frame_->linesize);
-                    return scaled_frame_;
-                }
-            }
-            char err[256];
-            av_strerror(ret, err, sizeof(err));
-            //LOG_WARN("[VideoFrameSource] av_read_frame failed: " + std::string(err));
-            return nullptr;
-        }
-        //LOG_DEBUG("[VideoFrameSource] packet read stream_index: " + std::to_string(pkt_->stream_index) + " vs video: " + std::to_string(video_stream_index_));
-        
-
-        // Ignore audio packets
-        if (pkt_->stream_index != video_stream_index_) {
-            av_packet_unref(pkt_);
-            continue;
-        }
-
-        // Send compressed packet to decoder
-        ret = avcodec_send_packet(dec_ctx_, pkt_);
-        av_packet_unref(pkt_);
-
-        if (ret < 0)
-            continue;
-
-        // Retrieve decoded video frame
-        ret = avcodec_receive_frame(dec_ctx_, frame_);
-        if (ret == AVERROR(EAGAIN)) {
-            LOG_DEBUG("[VideoFrameSource] EAGAIN - needs more packets");
-            continue;
-        }
-        if (ret < 0) {
-            char err[256];
-            av_strerror(ret, err, sizeof(err));
-            LOG_WARN("[VideoFrameSource] receive_frame failed: " + std::string(err));
-            return nullptr;
-        }
-        //LOG_DEBUG("[VideoFrameSource] frame decoded pts: " + std::to_string(frame_->pts));
-        if (ret == 0) {
-            // Guard against possible bad frames
-            if (frame_->width <= 0 || frame_->height <= 0 ||
-                !frame_->data[0] || !frame_->data[1] || !frame_->data[2] ||
-                frame_->linesize[0] <= 0) {
-                LOG_WARN("[VideoFrameSource] invalid frame data, skipping");
-                continue;
-            }
-
-            // Convert timebase to 1/1000000
-            //frame_->pts = av_rescale_q(
-            //    frame_->pts - first_pts_,
-           //     src_time_base_,
-            //    {1, 1000000}
-            //);
-            int64_t source_pts = frame_->best_effort_timestamp;
-
-            if (source_pts == AV_NOPTS_VALUE){
-                source_pts = frame_->pts;
-            }
-            if (source_pts == AV_NOPTS_VALUE){
-                LOG_WARN("[VideoFrameSource] frame has no valid PTS, skipping.");
-                continue;
-            }
-            if (first_pts_ == AV_NOPTS_VALUE){
-                first_pts_ = source_pts;
-
-                LOG_DEBUG("[VideoFramesource] first decoded PTS: " + std::to_string(first_pts_);
-            }
-            //frame_->pts = av_rescale_q(
-            //    frame_->pts - first_pts_,
-            //    src_time_base_,
-           //     {1, 1000000}
-            //);
-
-            
-
-            int ret2 = 0;
-            try {
-                ret2 = sws_scale(
-                    sws_,
-                    frame_->data, frame_->linesize,
-                    0, dec_ctx_->height,
-                    scaled_frame_->data, scaled_frame_->linesize
-                );
-            } catch (...) {
-                LOG_WARN("[VideoFrameSource] sws_scale exception on corrupted frame, skipping");
-                continue;
-            }
-
-            if (ret2 <= 0) {
-                LOG_WARN("[VideoFrameSource] sws_scale failed, skipping");
-                continue;
-            }
-
-            return scaled_frame_;
-        }*/
-        
         /* Trying new initial read packet source */
         
         if (ret < 0) {
