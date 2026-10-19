@@ -12,8 +12,20 @@ pkg_check_modules(FFMPEG REQUIRED IMPORTED_TARGET
     libswscale
     libswresample
 )
-
-file(GLOB SOURCES "src/*.cc")
+set(SOURCES
+    src/main.cc
+    src/ContinuumEngine.cc
+    src/Encoder.cc
+    src/Streamer.cc
+    src/VideoFramesource.cc
+    src/AudioFramesource.cc
+    src/TimelineManager.cc
+    src/PlaylistManager.cc
+    src/logger.cc
+    src/ClockSync.cc
+    src/FrameWriter.cc
+    src/Config.cc
+)
 
 add_executable(continuum ${SOURCES})
 target_link_libraries(continuum PkgConfig::FFMPEG)
