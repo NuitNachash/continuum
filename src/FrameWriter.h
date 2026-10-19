@@ -8,7 +8,7 @@
 
 class FrameWriter {
 public:
-    explicity FrameWriter(Streamer& streamer, ClockSync& clock);
+    explicit FrameWriter(Streamer& streamer, ClockSync& clock);
 
     bool writeVideo(AVPacket* pkt, AVRational timebase);
 

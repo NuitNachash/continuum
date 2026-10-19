@@ -1,5 +1,7 @@
 #include "Streamer.h"
 #include "logger.h"
+#include "FrameWriter.h"
+#include "ClockSync.h"
 #include <iostream>
 #include <stdexcept>
 #include <chrono>
@@ -14,6 +16,8 @@
     parameters into the output streams, opens the network connection,
     and writes the container header
 */
+// Streamer-specific log file
+std::ofstream streamLogFile;
 
 Streamer::Streamer(const config& cfg, const Encoder& encoder) {
 
@@ -69,6 +73,7 @@ Streamer::Streamer(const config& cfg, const Encoder& encoder) {
         throw std::runtime_error("write_header failed");
 
     LOG_INFO("[Streamer] RTMP connected");
+    // Open diagnostic log file if it has not already been opened
     streamLogFile.open("continuum_streamer.log", std::ios::app);
 }
 
@@ -96,8 +101,6 @@ std::string streamTimestamp() {
     return oss.str();
 }
 
-// Streamer-specific log file
-std::ofstream streamLogFile;
 
 // Writes diagnositc messages to console and log file
 void streamLog(const std::string& msg) {
@@ -125,8 +128,6 @@ static auto last_audio_write = std::chrono::steady_clock::now();
 // Packets are already compressed by Encoder
 // This function only handles timing diagnositcs and muxing
 int Streamer::write(AVPacket* pkt) {
-
-    
     auto t0 = std::chrono::steady_clock::now();
 
     // Determine whether this packet contains video or audio
