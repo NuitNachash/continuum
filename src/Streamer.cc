@@ -69,6 +69,7 @@ Streamer::Streamer(const config& cfg, const Encoder& encoder) {
         throw std::runtime_error("write_header failed");
 
     LOG_INFO("[Streamer] RTMP connected");
+    streamLogFile.open("continuum_streamer.log", std::ios::app);
 }
 
 // Cleans up the RTMP output connection
@@ -125,8 +126,7 @@ static auto last_audio_write = std::chrono::steady_clock::now();
 // This function only handles timing diagnositcs and muxing
 int Streamer::write(AVPacket* pkt) {
 
-    // Open diagnostic log file if it has not already been opened
-    streamLogFile.open("continuum_streamer.log", std::ios::app);
+    
     auto t0 = std::chrono::steady_clock::now();
 
     // Determine whether this packet contains video or audio
