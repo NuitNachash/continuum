@@ -18,7 +18,7 @@ set(SOURCES
     src/Encoder.cc
     src/Streamer.cc
     src/VideoFramesource.cc
-    src/AudioFramesource.cc
+    src/AudioFramesource.cc 
     src/TimelineManager.cc
     src/PlaylistManager.cc
     src/logger.cc
