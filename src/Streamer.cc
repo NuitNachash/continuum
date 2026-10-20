@@ -145,5 +145,8 @@ int Streamer::write(AVPacket* pkt) {
         av_strerror(ret, err, sizeof(err));
         LOG_ERROR("[Streamer] write error: " + std::string(err));
     }
+    LOG_DEBUG("[Streamer] wrote " + std::string(isVideo ? "video" : "audio") +
+              " packet, size=" + std::to_string(pkt->size) +
+              ", time=" + std::to_string(ms) + " ms");
     return ret;
 }

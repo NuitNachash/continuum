@@ -138,6 +138,7 @@ int Encoder::receiveVideo(const PacketCallback& cb) {
     int ret = 0;
 
     while ((ret = avcodec_receive_packet(video_ctx_, pkt)) == 0) {
+        LOG_DEBUG("[Encoder] received video packet pts=" + std::to_string(pkt->pts) + " dts=" + std::to_string(pkt->dts));
         // Pass encoded packet to the streamer
         cb(pkt);
         av_packet_unref(pkt);
@@ -147,6 +148,7 @@ int Encoder::receiveVideo(const PacketCallback& cb) {
 
     // EAGAIN means the encoder needs more frames before producing output
     return (ret == AVERROR(EAGAIN)) ? 0 : ret;
+    LOG_DEBUG("[Encoder] receiveVideo returned " + std::to_string(ret));
 }
 
 // Sends raw audio samples into the AAC encoder
@@ -173,16 +175,19 @@ int Encoder::receiveAudio(const PacketCallback& cb) {
     }
     
     av_packet_free(&pkt);
+    LOG_DEBUG("[Encoder] receiveAudio returned " + std::to_string(ret));
 
     return (ret == AVERROR(EAGAIN)) ? 0 : ret;
 }
 
 // Returns the timestamp scale used by video frames
 AVRational Encoder::video_time_base() const {
+    LOG_DEBUG("[Encoder] video_time_base: " + std::to_string(video_ctx_->time_base.num) + "/" + std::to_string(video_ctx_->time_base.den));
     return video_ctx_->time_base;
 }
 
 // Returns the timestamp scale used by audio samples
 AVRational Encoder::audio_time_base() const {
+    LOG_DEBUG("[Encoder] audio_time_base: " + std::to_string(audio_ctx_->time_base.num) + "/" + std::to_string(audio_ctx_->time_base.den));
     return audio_ctx_->time_base;
 }

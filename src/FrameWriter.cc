@@ -6,6 +6,7 @@
 FrameWriter::FrameWriter(Streamer& streamer, ClockSync& clock) : streamer_(streamer), clock_(clock) {}
 
 bool FrameWriter::writeVideo(AVPacket* pkt, AVRational timebase) {
+    LOG_DEBUG("[FrameWriter] writeVideo called with pts=" + std::to_string(pkt->pts) + " dts=" + std::to_string(pkt->dts));
     pkt->pts += video_offset_;
     pkt->pts += audio_offset_;
 
@@ -27,6 +28,7 @@ bool FrameWriter::writeVideo(AVPacket* pkt, AVRational timebase) {
     std::lock_guard<std::mutex> lock(write_mutex_);
     pkt->stream_index = streamer_.video_stream()->index;
     av_packet_rescale_ts(pkt, timebase, streamer_.time_base_video());
+    LOG_DEBUG("[FrameWriter] writing video packet with pts=" + std::to_string(pkt->pts) + " dts=" + std::to_string(pkt->dts));
     streamer_.write(pkt);
     return true;
 }

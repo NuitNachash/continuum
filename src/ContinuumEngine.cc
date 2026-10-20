@@ -59,8 +59,14 @@ bool ContinuumEngine::sendOneVideoFrame() {
         }
     }
 
-    encoder_.sendVideo(frame);
+    if (encoder_.sendVideo(frame) < 0){
+        LOG_ERROR("[Engine] sendVideo failed for frame pts=" + std::to_string(frame->pts));
+        return false;
+    }
+        
+
     encoder_.receiveVideo([&](AVPacket* pkt) {
+        LOG_DEBUG("[Engine] received video packet pts=" + std::to_string(pkt->pts) + " dts=" + std::to_string(pkt->dts));
         last_video_pts_ = pkt->pts;
         writer_.writeVideo(pkt, encoder_.video_time_base());
     });

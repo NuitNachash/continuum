@@ -1,4 +1,5 @@
 #include "ClockSync.h"
+#include "logger.h"
 extern "C" {
     #include <libavutil/mathematics.h>
 }
@@ -7,6 +8,7 @@ ClockSync::ClockSync() {}
 
 void ClockSync::start() {
     start_ = std::chrono::steady_clock::now();
+    LOG_DEBUG("[ClockSync] started at " + std::to_string(wallClockUs()) + " us");
 }
 
 int64_t ClockSync::wallClockUs() const {
