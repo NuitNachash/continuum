@@ -106,6 +106,15 @@ void ContinuumEngine::start() {
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
     LOG_INFO("[Engine] FIFO pre-filled: " + std::to_string(audioSource_.fifoSize()) + " samples");
 
+    
+    LOG_INFO("[Engine] waiting for audio clock...");
+    while (running_ && clock_.audioClockUs() == 0) {
+        AVFrame* aframe = audioSource_.next();
+        if (aframe) sendOneAudioFrame(aframe);
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    LOG_INFO("[Engine] audio clock initialized: " + std::to_string(clock_.audioClockUs()) + "us");
+
     while (running_) {
         if (paused_) {
             std::this_thread::sleep_for(std::chrono::milliseconds(50));
