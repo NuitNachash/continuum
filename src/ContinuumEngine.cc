@@ -81,6 +81,7 @@ bool ContinuumEngine::sendOneAudioFrame(AVFrame* aframe) {
         last_audio_pts_ = pkt->pts;
         writer_.writeAudio(pkt, encoder_.audio_time_base());
     });
+    LOG_DEBUG("[Engine] audio frame nb_samples: " + std::to_string(aframe->nb_samples));
     return true;
 }
 
