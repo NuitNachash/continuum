@@ -65,6 +65,9 @@ public:
 
     std::atomic<bool> eof_ = false;
 
+    static constexpr int FIFO_TARGET = 96000;
+    static constexpr int FIFO_MIN = 48000;
+
 private:
     // Initializes the decoder 
     void initDecoder();

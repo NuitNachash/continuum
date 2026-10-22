@@ -357,7 +357,7 @@ int AudioFrameSource::fifoSize() {
 
 void AudioFrameSource::decodeIntoFifo(){
 	while(true){
-        if (fifoSize() >= 8192){
+        if (fifoSize() >= FIFO_TARGET) {
             return;
         }
 
