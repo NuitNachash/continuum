@@ -92,6 +92,9 @@ public:
     int64_t last_video_duration_ = 0;
     int64_t last_audio_duration_ = 0;
 
+    int64_t next_video_pts_ = 0;
+    int64_t next_audio_pts_ = 0;
+
 private:
     // Reads, timestamps, encodes, and streams one video frame
     bool sendOneVideoFrame();

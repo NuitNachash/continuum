@@ -58,30 +58,35 @@ bool ContinuumEngine::sendOneVideoFrame() {
             if (!frame) return false;
         }
     }
-
+    frame->pts = next_video_pts_++;
     if (encoder_.sendVideo(frame) < 0){
         LOG_ERROR("[Engine] sendVideo failed for frame pts=" + std::to_string(frame->pts));
+        av_frame_free(&frame);
         return false;
     }
         
 
     encoder_.receiveVideo([&](AVPacket* pkt) {
-        LOG_DEBUG("[Engine] received video packet pts=" + std::to_string(pkt->pts) + " dts=" + std::to_string(pkt->dts));
+        //LOG_DEBUG("[Engine] received video packet pts=" + std::to_string(pkt->pts) + " dts=" + std::to_string(pkt->dts));
         last_video_pts_ = pkt->pts;
         writer_.writeVideo(pkt, encoder_.video_time_base());
     });
+    av_frame_free(&frame);
     return true;
 }
 
 // Encodes and streams one audio frame
 bool ContinuumEngine::sendOneAudioFrame(AVFrame* aframe) {
+    aframe->pts = next_audio_pts_;
+    next_audio_pts_ += aframe->nb_samples;
+    LOG_DEBUG("[Engine] audio frame nb_samples: " + std::to_string(aframe->nb_samples));
     encoder_.sendAudio(aframe);
     av_frame_free(&aframe);
     encoder_.receiveAudio([&](AVPacket* pkt) {
         last_audio_pts_ = pkt->pts;
         writer_.writeAudio(pkt, encoder_.audio_time_base());
     });
-    LOG_DEBUG("[Engine] audio frame nb_samples: " + std::to_string(aframe->nb_samples));
+    
     return true;
 }
 
@@ -90,28 +95,30 @@ bool ContinuumEngine::sendOneAudioFrame(AVFrame* aframe) {
 // based on the current timeline position
 void ContinuumEngine::start() {
     running_ = true;
-    clock_.start();
+    
     LOG_INFO("[Engine] streaming - Ctrl+C to stop");
 
     audioThreadRunning_ = true;
     audioDecodeThread_ = std::thread([this]() {
         while (audioThreadRunning_) {
-            if (!audioSource_.eof_ && audioSource_.fifoSize() < 8192) {
+            if (!audioSource_.eof_ && audioSource_.fifoSize() < FIFO_MIN) {
                 audioSource_.decodeIntoFifo();
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
     });
 
-    while (audioSource_.fifoSize() < 8192)
+    while (audioSource_.fifoSize() < FIFO_TARGET)
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
     LOG_INFO("[Engine] FIFO pre-filled: " + std::to_string(audioSource_.fifoSize()) + " samples");
 
-    
+    clock_.start();
     LOG_INFO("[Engine] waiting for audio clock...");
-    while (running_ && clock_.audioClockUs() == 0) {
+    while (running_ && !clock_.audioClockStarted()) {
         AVFrame* aframe = audioSource_.next();
-        if (aframe) sendOneAudioFrame(aframe);
+        if (aframe) {
+            sendOneAudioFrame(aframe);
+        }
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
     LOG_INFO("[Engine] audio clock initialized: " + std::to_string(clock_.audioClockUs()) + "us");
@@ -122,7 +129,7 @@ void ContinuumEngine::start() {
             continue;
         }
 
-        if (audioSource_.eof_ && audioSource_.fifoSize() == 0) {
+        if (audioSource_.eof_ && audioSource_.fifoSize() < 1024) {
             LOG_INFO("[Engine] Audio EOF - triggering switch");
             std::string nextPath = playlist_.getNext();
             if (!nextPath.empty()) {
@@ -142,10 +149,13 @@ void ContinuumEngine::start() {
 
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
-        AVFrame* aframe = audioSource_.next();
-        if (aframe) {
-            sendOneAudioFrame(aframe);
-            sendOneVideoFrame();
+        int64_t a_us = av_rescale_q(next_audio_pts_, {1, cfg_.samplerate}, {1, 1000000});
+        int64_t v_us = av_rescale_q(next_video_pts_, {1, cfg_.fps}, {1, 1000000});
+        if (a_us <= v_us) {
+            AVFrame* a = audioSource_.next();
+            if (a) sendOneAudioFrame(a);
+            else if (v_us - a_us < 400000) sendOneVideoFrame();
+            else std::this_thread::sleep_for(std::chrono::milliseconds(2));
         } else {
             sendOneVideoFrame();
         }
@@ -195,18 +205,19 @@ void ContinuumEngine::performSwitch(const std::string& nextPath) {
 
         // Accumulate pts offset for continuous streaming
         // offset += last_pts - first_pts + one_frame_duration
-        int64_t video_frame_dur = 1; // 1 tick at 1/60
-        int64_t audio_frame_dur = av_rescale_q(
-            1024, {1, cfg_.samplerate}, encoder_.audio_time_base()
-        );
+        //int64_t video_frame_dur = 1; // 1 tick at 1/60
+        //int64_t audio_frame_dur = av_rescale_q(
+        //    1024, {1, cfg_.samplerate}, encoder_.audio_time_base()
+        //);
 
-        writer_.setVideoOffset(writer_.videoOffset() + last_video_pts_ + video_frame_dur);
-        writer_.setAudioOffset(writer_.audioOffset() + last_audio_pts_ + audio_frame_dur);
+        //writer_.setVideoOffset(writer_.videoOffset() + last_video_pts_ + video_frame_dur);
+        //writer_.setAudioOffset(writer_.audioOffset() + last_audio_pts_ + audio_frame_dur);
 
-        video_pts_at_switch_ = writer_.videoOffset();
-
-        LOG_INFO("[Engine] pts offset - video: " + std::to_string(writer_.videoOffset()) +
-                 " audio: " + std::to_string(writer_.audioOffset()));
+        
+        next_video_pts_ = std::max(next_video_pts_, av_rescale_q(next_audio_pts_, {1, cfg_.samplerate}, {1, cfg_.fps}));
+        video_pts_at_switch_ = next_video_pts_;
+        //LOG_INFO("[Engine] pts offset - video: " + std::to_string(writer_.videoOffset()) +
+        //         " audio: " + std::to_string(writer_.audioOffset()));
 
         audioSource_.flushFifo();
         source_.flushBuffer();
@@ -218,27 +229,20 @@ void ContinuumEngine::performSwitch(const std::string& nextPath) {
         audioThreadRunning_ = true;
         audioDecodeThread_ = std::thread([this]() {
             while (audioThreadRunning_) {
-                if (!audioSource_.eof_ && audioSource_.fifoSize() < 8192) {
+                if (!audioSource_.eof_ && audioSource_.fifoSize() < FIFO_MIN) {
                     audioSource_.decodeIntoFifo();
                 }
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
             }
         });
 
-        while (audioSource_.fifoSize() < 8192)
+        while (audioSource_.fifoSize() < FIFO_TARGET)
             std::this_thread::sleep_for(std::chrono::milliseconds(5));
         LOG_INFO("[Engine] FIFO refilled after switch: " + std::to_string(audioSource_.fifoSize()));
+        
 
     } catch (const std::exception& e) {
         LOG_ERROR("[Engine] Switch failed: " + std::string(e.what()));
-        audioThreadRunning_ = true;
-        audioDecodeThread_ = std::thread([this]() {
-            while (audioThreadRunning_) {
-                if (!audioSource_.eof_ && audioSource_.fifoSize() < 8192)
-                    audioSource_.decodeIntoFifo();
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
-            }
-        });
         std::string next = playlist_.getNext();
         performSwitch(!next.empty() ? next : current_path_);
     }
@@ -253,9 +257,9 @@ EngineStatus ContinuumEngine::getStatus() const {
     }
     s.paused = paused_;
     s.running = running_;
-    s.video_pts = writer_.videoOffset() + last_video_pts_;
+    s.video_pts = last_video_pts_;
     s.audio_pts = clock_.audioClockUs();
-    s.video_pts_since_switch = last_video_pts_;
+    s.video_pts_since_switch = last_video_pts_ - video_pts_at_switch_;
     s.current_duration = source_.getDuration();
     return s;
 }
