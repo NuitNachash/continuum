@@ -79,12 +79,9 @@ void printUsage() {
 }
 
 static ContinuumEngine* g_engine = nullptr;
-void signalHandler(int sig) {
-    if (g_engine) {
-        g_engine->stop();
-        g_engine->forceClose();
-    }
-    std::exit(0);
+static volatile sig_atomic_t g_stop = 0;
+void signalHandler(int) {
+    g_stop = 1;
 }
 
 int main(int argc, char** argv) {
@@ -291,7 +288,10 @@ int main(int argc, char** argv) {
                     << "\"timestamp\": \"" << ts.str() << "\"  }";
             }
             std::rename(tmpFile.c_str(), statusFile.c_str());
-
+            if (g_stop) {
+                engine.stop();
+                stopped = true;
+            }
             if (stopped)
                 break;
 
