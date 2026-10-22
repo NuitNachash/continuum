@@ -23,6 +23,7 @@ int64_t ClockSync::untilReady(int64_t pts, AVRational timebase) const {
 
 void ClockSync::updateAudioClock(int64_t pts, AVRational timebase) {
     audio_clock_us_ = av_rescale_q(pts, timebase, {1, 1000000});
+    audio_clock_started_ = true;
 }
 
 int64_t ClockSync::audioClockUs() const {

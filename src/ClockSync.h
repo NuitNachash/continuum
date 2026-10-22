@@ -19,6 +19,10 @@ public:
 
     int64_t audioClockUs() const;
 
+    bool audio_clock_started_ = false;
+    
+    bool audioClockStarted() const { return audio_clock_started_; }
+
 private:
     std::chrono::steady_clock::time_point start_;
     std::atomic<int64_t> audio_clock_us_ = 0;
