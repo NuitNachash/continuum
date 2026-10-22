@@ -7,8 +7,7 @@ FrameWriter::FrameWriter(Streamer& streamer, ClockSync& clock) : streamer_(strea
 
 bool FrameWriter::writeVideo(AVPacket* pkt, AVRational timebase) {
     LOG_DEBUG("[FrameWriter] writeVideo called with pts=" + std::to_string(pkt->pts) + " dts=" + std::to_string(pkt->dts));
-    pkt->pts += video_offset_;
-    pkt->pts += audio_offset_;
+
 
     int64_t pts_us = av_rescale_q(pkt->pts, timebase, {1, 1000000});
     int64_t audio_us = clock_.audioClockUs();
@@ -34,8 +33,7 @@ bool FrameWriter::writeVideo(AVPacket* pkt, AVRational timebase) {
 }
 
 bool FrameWriter::writeAudio(AVPacket* pkt, AVRational timebase) {
-    pkt->pts += audio_offset_;
-    pkt->dts += audio_offset_;
+
 
     clock_.updateAudioClock(pkt->pts, timebase);
 
