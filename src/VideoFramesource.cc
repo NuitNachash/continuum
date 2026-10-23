@@ -449,21 +449,21 @@ void VideoFrameSource::initFilterGraph(){
         tb.num, tb.den, sar.num, sar.den);
     
     filter_graph = avfilter_graph_alloc();
-    if (!filter_graph_){
+    if (!filter_graph){
         LOG_ERROR("[VideoFrameSource] Failed to allocate filter graph");
         return;
     }
-    if(avfilter_graph_create_filter(&buffersrc_ctx, avfilter_get_by_name("buffer"), "in", args, nullptr, filter_graph_) < 0){
+    if(avfilter_graph_create_filter(&buffersrc_ctx, avfilter_get_by_name("buffer"), "in", args, nullptr, filter_graph) < 0){
         LOG_ERROR("[VideoFrameSource] Failed to create buffer source");
         return;
     }
-    if(avfilter_graph_create_filter(&buffersink_ctx, avfilter_get_by_name("buffersink"), "out", nullptr, nullptr, filter_graph_) < 0){
+    if(avfilter_graph_create_filter(&buffersink_ctx, avfilter_get_by_name("buffersink"), "out", nullptr, nullptr, filter_graph) < 0){
         LOG_ERROR("[VideoFrameSource] Failed to create buffer sink");
         return;
     }
 
     enum AVPixelFormat pix_fmts[] = {AV_PIX_FMT_YUV420P, AV_PIX_FMT_NONE};
-    av_opt_set_int_list(buffersink_ctx_, "pix_fmts", pix_fmts, AV_PIX_FMT_NONE, AV_OPT_SEARCH_CHILDREN);
+    av_opt_set_int_list(buffersink_ctx, "pix_fmts", pix_fmts, AV_PIX_FMT_NONE, AV_OPT_SEARCH_CHILDREN);
 
     AVFilterInOut* outputs = avfilter_inout_alloc();
     AVFilterInOut* inputs = avfilter_inout_alloc();
@@ -478,24 +478,24 @@ void VideoFrameSource::initFilterGraph(){
 
     std::string desc = "setpts=PTS-STARTPTS,fps=" + std::to_string(cfg_.fps) + ",scale" + std::to_string(cfg_.width) + ":" + std::to_string(cfg_.height);
 
-    int ret = avfilter_graph_parse_ptr(filter_graph_, desc.c_str(), &inputs, &outputs, nullptr);
+    int ret = avfilter_graph_parse_ptr(filter_graph, desc.c_str(), &inputs, &outputs, nullptr);
     avfilter_inout_free(&inputs);
     avfilter_inout_free(&outputs);
     if (ret < 0){
         LOG_ERROR("[VideoFrameSource] Filter parse failed")
     }
 
-    if (avfilter_graph_config(filter_graph_, nullptr) < 0){
+    if (avfilter_graph_config(filter_graph, nullptr) < 0){
         LOG_ERROR("[VideoFrameSource] Filter config failed")
     }
-    AVRational stb = av_buffersink_get_time_base(buffersink_ctx_);
+    AVRational stb = av_buffersink_get_time_base(buffersink_ctx);
     LOG_INFO("[VideoFrameSource] Filter sink time_base=" + std::to_string(stb.num) + "/" + std::to_string(stb.den));
 }
 
 void VideoFrameSource::freeFilterGraph(){
-    if (filter_graph_){
-        avfilter_graph_free(&filter_graph_);
-        buffersrc_ctx_ = buffersink_ctx_ = nullptr;
+    if (filter_graph){
+        avfilter_graph_free(&filter_graph);
+        buffersrc_ctx_ = buffersink_ctx = nullptr;
     }
 }
 void VideoFrameSource::flushBuffer() {
