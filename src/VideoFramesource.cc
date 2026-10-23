@@ -12,6 +12,7 @@ extern "C" {
     #include <libavfilter/avfilter.h>
     #include <libavfilter/buffersrc.h>
     #include <libavfilter/buffersink.h>
+    #include <libavutil/opt.h>
 }
 
 /*  Creates a video frame source
@@ -437,7 +438,7 @@ AVFrame* VideoFrameSource::nextBuffered() {
 void VideoFrameSource::initFilterGraph(){
     freeFilterGraph();
     AVStream* st = fmt_->streams[video_stream_index_];
-    AVRational tb = st->tiem_base;
+    AVRational tb = st->time_base;
     AVRational sar = dec_ctx_->sample_aspect_ratio;
     if (sar.num == 0) sar = {1, 1};
 
@@ -447,16 +448,16 @@ void VideoFrameSource::initFilterGraph(){
         dec_ctx_->width, dec_ctx_->height, dec_ctx_->pix_fmt,
         tb.num, tb.den, sar.num, sar.den);
     
-    filter_graph_ = avfilter_graph_alloc();
+    filter_graph = avfilter_graph_alloc();
     if (!filter_graph_){
         LOG_ERROR("[VideoFrameSource] Failed to allocate filter graph");
         return;
     }
-    if(avfilter_graph_create_filter(&buffersrc_ctx_, avfilter_get_by_name("buffer"), "in", args, nullptr, filter_graph_) < 0){
+    if(avfilter_graph_create_filter(&buffersrc_ctx, avfilter_get_by_name("buffer"), "in", args, nullptr, filter_graph_) < 0){
         LOG_ERROR("[VideoFrameSource] Failed to create buffer source");
         return;
     }
-    if(avfilter_graph_create_filter(&buffersink_ctx_, avfilter_get_by_name("buffersink"), "out", nullptr, nullptr, filter_graph_) < 0){
+    if(avfilter_graph_create_filter(&buffersink_ctx, avfilter_get_by_name("buffersink"), "out", nullptr, nullptr, filter_graph_) < 0){
         LOG_ERROR("[VideoFrameSource] Failed to create buffer sink");
         return;
     }
@@ -467,11 +468,11 @@ void VideoFrameSource::initFilterGraph(){
     AVFilterInOut* outputs = avfilter_inout_alloc();
     AVFilterInOut* inputs = avfilter_inout_alloc();
     outputs->name = av_strdup("in");
-    outputs->filter_ctx = buffersrc_ctx_;
+    outputs->filter_ctx = buffersrc_ctx;
     outputs->pad_idx = 0;
     outputs->next = nullptr;
     inputs->name = av_strdup("out");
-    inputs->filter_ctx = buffersink_ctx_;
+    inputs->filter_ctx = buffersink_ctx;
     inputs->pad_idx = 0;
     inputs->next = nullptr;
 
