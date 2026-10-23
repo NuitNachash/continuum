@@ -65,6 +65,9 @@ public:
     int64_t firstPts() const { return first_pts_; }
     AVRational srcTimeBase() const { return src_time_base_; }
 
+    void initFilterGraph();
+    void freeFilterGraph();
+
 private:
     // Converts decoded frames into the required output format
     // Handles resolution changes and pixel foramt conversion
