@@ -11,6 +11,7 @@ pkg_check_modules(FFMPEG REQUIRED IMPORTED_TARGET
     libavutil
     libswscale
     libswresample
+    avfilter
 )
 set(SOURCES
     src/main.cc
@@ -25,6 +26,7 @@ set(SOURCES
     src/ClockSync.cc
     src/FrameWriter.cc
     src/Config.cc
+
 )
 
 add_executable(continuum ${SOURCES})
