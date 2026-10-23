@@ -482,11 +482,11 @@ void VideoFrameSource::initFilterGraph(){
     avfilter_inout_free(&inputs);
     avfilter_inout_free(&outputs);
     if (ret < 0){
-        LOG_ERROR("[VideoFrameSource] Filter parse failed")
+        LOG_ERROR("[VideoFrameSource] Filter parse failed");
     }
 
     if (avfilter_graph_config(filter_graph, nullptr) < 0){
-        LOG_ERROR("[VideoFrameSource] Filter config failed")
+        LOG_ERROR("[VideoFrameSource] Filter config failed");
     }
     AVRational stb = av_buffersink_get_time_base(buffersink_ctx);
     LOG_INFO("[VideoFrameSource] Filter sink time_base=" + std::to_string(stb.num) + "/" + std::to_string(stb.den));
@@ -495,7 +495,7 @@ void VideoFrameSource::initFilterGraph(){
 void VideoFrameSource::freeFilterGraph(){
     if (filter_graph){
         avfilter_graph_free(&filter_graph);
-        buffersrc_ctx_ = buffersink_ctx = nullptr;
+        buffersrc_ctx = buffersink_ctx = nullptr;
     }
 }
 void VideoFrameSource::flushBuffer() {
