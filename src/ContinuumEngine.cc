@@ -58,7 +58,15 @@ bool ContinuumEngine::sendOneVideoFrame() {
             if (!frame) return false;
         }
     }
-    frame->pts = next_video_pts_++;
+    
+    int64_t rel = frame->pts - source_.firstPts();
+    int64_t target = video_base_pts_ + av_rescale_q(rel, source_.srcTimeBase(), {1, cfg_.fps});
+    if (target > next_video_pts_) {
+        target = next_video_pts_;
+    }
+    frame->pts = target;
+    next_video_pts_ = target + 1;
+    
     if (encoder_.sendVideo(frame) < 0){
         LOG_ERROR("[Engine] sendVideo failed for frame pts=" + std::to_string(frame->pts));
         av_frame_free(&frame);
@@ -215,6 +223,7 @@ void ContinuumEngine::performSwitch(const std::string& nextPath) {
 
         
         next_video_pts_ = std::max(next_video_pts_, av_rescale_q(next_audio_pts_, {1, cfg_.samplerate}, {1, cfg_.fps}));
+        video_base_pts_ = next_video_pts_;
         video_pts_at_switch_ = next_video_pts_;
         //LOG_INFO("[Engine] pts offset - video: " + std::to_string(writer_.videoOffset()) +
         //         " audio: " + std::to_string(writer_.audioOffset()));
