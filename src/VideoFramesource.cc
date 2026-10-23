@@ -10,8 +10,8 @@ extern "C" {
     #include <libavutil/imgutils.h>
     #include <libswscale/swscale.h>
     #include <libavfilter/avfilter.h>
-    #include <buffersrc.h>
-    #include <buffersink.h>
+    #include <libavfilter/buffersrc.h>
+    #include <libavfilter/buffersink.h>
 }
 
 /*  Creates a video frame source
