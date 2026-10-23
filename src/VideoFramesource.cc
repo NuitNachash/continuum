@@ -9,6 +9,9 @@ extern "C" {
     #include <libavcodec/avcodec.h>
     #include <libavutil/imgutils.h>
     #include <libswscale/swscale.h>
+    #include <libavfilter/avfilter.h>
+    #include <buffersrc.h>
+    #include <buffersink.h>
 }
 
 /*  Creates a video frame source
@@ -19,6 +22,14 @@ extern "C" {
      - Converting frames into the encoder's required format
 */
 
+// Create video filter graph
+AVFilterGraph* filter_graph = avfilter_graph_alloc();
+AVFilterContext* buffersrc_ctx = nullptr;
+AVFilterContext* buffersink_ctx = nullptr;
+AVFrame* filter_frame = nullptr;
+void initFilterGraph();
+void freeFilterGraph();
+    
 VideoFrameSource::VideoFrameSource(const config& cfg) : cfg_(cfg) {
     fmt_ = nullptr;
 
@@ -45,10 +56,14 @@ VideoFrameSource::VideoFrameSource(const config& cfg) : cfg_(cfg) {
     int ret2 = av_frame_get_buffer(scaled_frame_, 32);
     if (ret2 < 0)
         throw std::runtime_error("Failed to allocate scaled frame buffer");
+
+    filter_frame = av_frame_alloc();
 }
 
 // Opens a media file and initializes the video decoder
 void VideoFrameSource::openFile(const std::string& path){
+
+
     // Open input container
     AVDictionary* opts = nullptr;
     av_dict_set(&opts, "timeout", "200000", 0);
@@ -151,6 +166,9 @@ void VideoFrameSource::openFile(const std::string& path){
     scaled_frame_->width = cfg_.width;
     scaled_frame_->height = cfg_.height;
     av_frame_get_buffer(scaled_frame_, 32);
+
+    initFilterGraph();
+
 }
 
 // Releases decoder resources for the current file
@@ -416,6 +434,69 @@ AVFrame* VideoFrameSource::nextBuffered() {
     return out;
 }
 
+void VideoFrameSource::initFilterGraph(){
+    freeFilterGraph();
+    AVStream* st = fmt_->streams[video_stream_index_];
+    AVRational tb = st->tiem_base;
+    AVRational sar = dec_ctx_->sample_aspect_ratio;
+    if (sar.num == 0) sar = {1, 1};
+
+    char args[512];
+    snprintf(args, sizeof(args),
+        "video_size=%d%d:pix_fmt=%d:time_base=%d/%d:pixel_aspect=%d/%d",
+        dec_ctx_->width, dec_ctx_->height, dec_ctx_->pix_fmt,
+        tb.num, tb.den, sar.num, sar.den);
+    
+    filter_graph_ = avfilter_graph_alloc();
+    if (!filter_graph_){
+        LOG_ERROR("[VideoFrameSource] Failed to allocate filter graph");
+        return;
+    }
+    if(avfilter_graph_create_filter(&buffersrc_ctx_, avfilter_get_by_name("buffer"), "in", args, nullptr, filter_graph_) < 0){
+        LOG_ERROR("[VideoFrameSource] Failed to create buffer source");
+        return;
+    }
+    if(avfilter_graph_create_filter(&buffersink_ctx_, avfilter_get_by_name("buffersink"), "out", nullptr, nullptr, filter_graph_) < 0){
+        LOG_ERROR("[VideoFrameSource] Failed to create buffer sink");
+        return;
+    }
+
+    enum AVPixelFormat pix_fmts[] = {AV_PIX_FMT_YUV420P, AV_PIX_FMT_NONE};
+    av_opt_set_int_list(buffersink_ctx_, "pix_fmts", pix_fmts, AV_PIX_FMT_NONE, AV_OPT_SEARCH_CHILDREN);
+
+    AVFilterInOut* outputs = avfilter_inout_alloc();
+    AVFilterInOut* inputs = avfilter_inout_alloc();
+    outputs->name = av_strdup("in");
+    outputs->filter_ctx = buffersrc_ctx_;
+    outputs->pad_idx = 0;
+    outputs->next = nullptr;
+    inputs->name = av_strdup("out");
+    inputs->filter_ctx = buffersink_ctx_;
+    inputs->pad_idx = 0;
+    inputs->next = nullptr;
+
+    std::string desc = "setpts=PTS-STARTPTS,fps=" + std::to_string(cfg_.fps) + ",scale" + std::to_string(cfg_.width) + ":" + std::to_string(cfg_.height);
+
+    int ret = avfilter_graph_parse_ptr(filter_graph_, desc.c_str(), &inputs, &outputs, nullptr);
+    avfilter_inout_free(&inputs);
+    avfilter_inout_free(&outputs);
+    if (ret < 0){
+        LOG_ERROR("[VideoFrameSource] Filter parse failed")
+    }
+
+    if (avfilter_graph_config(filter_graph_, nullptr) < 0){
+        LOG_ERROR("[VideoFrameSource] Filter config failed")
+    }
+    AVRational stb = av_buffersink_get_time_base(buffersink_ctx_);
+    LOG_INFO("[VideoFrameSource] Filter sink time_base=" + std::to_string(stb.num) + "/" + std::to_string(stb.den));
+}
+
+void VideoFrameSource::freeFilterGraph(){
+    if (filter_graph_){
+        avfilter_graph_free(&filter_graph_);
+        buffersrc_ctx_ = buffersink_ctx_ = nullptr;
+    }
+}
 void VideoFrameSource::flushBuffer() {
     while(!frame_buffer_.empty()) {
         av_frame_free(&frame_buffer_.front());
