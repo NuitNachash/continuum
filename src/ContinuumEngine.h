@@ -95,6 +95,9 @@ public:
     int64_t next_video_pts_ = 0;
     int64_t next_audio_pts_ = 0;
 
+    static constexpr int FIFO_TARGET = AudioFrameSource::FIFO_TARGET;
+    static constexpr int FIFO_MIN = AudioFrameSource::FIFO_MIN;
+
 private:
     // Reads, timestamps, encodes, and streams one video frame
     bool sendOneVideoFrame();
