@@ -11,7 +11,7 @@ pkg_check_modules(FFMPEG REQUIRED IMPORTED_TARGET
     libavutil
     libswscale
     libswresample
-    avfilter
+    libavfilter
 )
 set(SOURCES
     src/main.cc
