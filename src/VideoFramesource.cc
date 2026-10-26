@@ -168,7 +168,7 @@ void VideoFrameSource::openFile(const std::string& path){
     scaled_frame_->height = cfg_.height;
     av_frame_get_buffer(scaled_frame_, 32);
 
-    initFilterGraph();
+    //initFilterGraph();
 
 }
 
