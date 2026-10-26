@@ -12,6 +12,7 @@
 #include "ClockSync.h"
 #include "FrameWriter.h"
 #include "PlaylistManager.h"
+#include "OutputWriter.h"
 
 // Represents the current state of the streaming engine
 // Used by external controllers or monitoring systems
@@ -97,6 +98,8 @@ public:
     int64_t next_video_pts_ = 0;
     int64_t next_audio_pts_ = 0;
 
+    int64_t last_sync_log_us_ = 0;
+
     static constexpr int FIFO_TARGET = AudioFrameSource::FIFO_TARGET;
     static constexpr int FIFO_MIN = AudioFrameSource::FIFO_MIN;
 
@@ -120,15 +123,17 @@ private:
     VideoFrameSource source_;
     AudioFrameSource audioSource_;
 
+    // Real-world clock time when streaming started
+    // Used to sync output timing
+    ClockSync clock_;
+
     // Keeps audio and video timestamps synced
-    FrameWriter writer_;
+    OutputWriter out_;
 
     // Manages the list of media files to play
     PlaylistManager playlist_;
     
-    // Real-world clock time when streaming started
-    // Used to sync output timing
-    ClockSync clock_;
+
 
     // Indicates whether the main streaming loop should continue
     bool running_ = false;

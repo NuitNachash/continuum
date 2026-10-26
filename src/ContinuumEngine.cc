@@ -1,8 +1,12 @@
 #include "ContinuumEngine.h"
 #include "logger.h"
+#include "OutputWriter.h"
 #include <thread>
 #include <iostream>
 #include <mutex>
+#include <cmath>
+#include <cstdio>
+
 
 /* Initializes the complete streaming pipeline:
   - Encoder for video/audio compression
@@ -17,7 +21,7 @@ ContinuumEngine::ContinuumEngine(const config& cfg)
       source_(cfg_),
       audioSource_(cfg_, encoder_.audio_time_base()),
       clock_(),
-      writer_(streamer_, clock_),
+      out_(streamer_, clock_),
       current_path_(cfg.mp4Path)
 {}
 
@@ -59,13 +63,7 @@ bool ContinuumEngine::sendOneVideoFrame() {
         }
     }
     
-    int64_t rel = frame->pts - source_.firstPts();
-    int64_t target = video_base_pts_ + av_rescale_q(rel, source_.srcTimeBase(), {1, cfg_.fps});
-    if (target > next_video_pts_) {
-        target = next_video_pts_;
-    }
-    frame->pts = target;
-    next_video_pts_ = target + 1;
+    frame->pts = next_video_pts_++;
     
     if (encoder_.sendVideo(frame) < 0){
         LOG_ERROR("[Engine] sendVideo failed for frame pts=" + std::to_string(frame->pts));
@@ -77,7 +75,7 @@ bool ContinuumEngine::sendOneVideoFrame() {
     encoder_.receiveVideo([&](AVPacket* pkt) {
         //LOG_DEBUG("[Engine] received video packet pts=" + std::to_string(pkt->pts) + " dts=" + std::to_string(pkt->dts));
         last_video_pts_ = pkt->pts;
-        writer_.writeVideo(pkt, encoder_.video_time_base());
+        out_.push(pkt, encoder_.video_time_base(), true);
     });
     av_frame_free(&frame);
     return true;
@@ -88,11 +86,14 @@ bool ContinuumEngine::sendOneAudioFrame(AVFrame* aframe) {
     aframe->pts = next_audio_pts_;
     next_audio_pts_ += aframe->nb_samples;
     LOG_DEBUG("[Engine] audio frame nb_samples: " + std::to_string(aframe->nb_samples));
+
+    clock_.setAudioClockSamples(next_audio_pts_, cfg_.samplerate);
+
     encoder_.sendAudio(aframe);
     av_frame_free(&aframe);
     encoder_.receiveAudio([&](AVPacket* pkt) {
         last_audio_pts_ = pkt->pts;
-        writer_.writeAudio(pkt, encoder_.audio_time_base());
+        out_.push(pkt, encoder_.audio_time_base(), false);
     });
     
     return true;
@@ -121,6 +122,7 @@ void ContinuumEngine::start() {
     LOG_INFO("[Engine] FIFO pre-filled: " + std::to_string(audioSource_.fifoSize()) + " samples");
 
     clock_.start();
+    out_.start();
     LOG_INFO("[Engine] waiting for audio clock...");
     while (running_ && !clock_.audioClockStarted()) {
         AVFrame* aframe = audioSource_.next();
@@ -135,6 +137,21 @@ void ContinuumEngine::start() {
         if (paused_) {
             std::this_thread::sleep_for(std::chrono::milliseconds(50));
             continue;
+        }
+        int64_t wall_us = clock_.wallClockUs();
+        if (wall_us - last_sync_log_us_ >= 10000000) {
+            last_sync_log_us_ = wall_us;
+            double wall = wall_us / 1e6;
+            double audio = next_audio_pts_ / (double)cfg_.samplerate;
+            double video = next_video_pts_ / (double)cfg_.fps;
+            char buf[200];
+            snprintf(buf, sizeof(buf), 
+                "[Sync] wall=%.3f audio=%.3f video=%.3f a-v=%+.3f a-wall=%+.3f q=%zu",
+                wall, audio, video, audio - video, audio - wall, out_.depth());
+            
+            LOG_INFO(buf);
+            if (std::abs(audio - video) > 0.040)
+                LOG_ERROR("[Sync] A/V offset exceeds 40ms");
         }
 
         if (audioSource_.eof_ && audioSource_.fifoSize() < 1024) {
@@ -169,6 +186,7 @@ void ContinuumEngine::start() {
         }
     }
     audioThreadRunning_ = false;
+    out_.stop();
     audioDecodeThread_.join();
 }
 

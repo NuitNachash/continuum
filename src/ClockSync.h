@@ -19,11 +19,13 @@ public:
 
     int64_t audioClockUs() const;
 
-    bool audio_clock_started_ = false;
-    
-    bool audioClockStarted() const { return audio_clock_started_; }
+    std::atomic<bool> audio_clock_started_{false};
+    std::atomic<int64_t> audio_clock_us_{0};
+
+    void setAudioClockSamples(int64_t samples, int sample_rate);
+    bool audioClockStarted() const { return audio_clock_started_.load(); }
 
 private:
     std::chrono::steady_clock::time_point start_;
-    std::atomic<int64_t> audio_clock_us_ = 0;
+    
 };
