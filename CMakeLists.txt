@@ -26,6 +26,7 @@ set(SOURCES
     src/ClockSync.cc
     src/FrameWriter.cc
     src/Config.cc
+    src/OutputWriter.cc
 
 )
 
