@@ -13,6 +13,7 @@
 #include "FrameWriter.h"
 #include "PlaylistManager.h"
 #include "OutputWriter.h"
+#include "FrameQueue.h"
 
 // Represents the current state of the streaming engine
 // Used by external controllers or monitoring systems
@@ -102,6 +103,9 @@ public:
 
     static constexpr int FIFO_TARGET = AudioFrameSource::FIFO_TARGET;
     static constexpr int FIFO_MIN = AudioFrameSource::FIFO_MIN;
+
+    FrameQueue videoQ_{8};
+    FrameQueue audioQ_{16};
 
 private:
     // Reads, timestamps, encodes, and streams one video frame
